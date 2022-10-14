@@ -58,8 +58,9 @@ template <
     typename ElementAccumulator_,  ///< Data type of the Accumulator
     typename ElementCompute_,      ///< Data type used to compute linear combination
     int      kElementsPerAccess_,  ///< Number of elements computed per operation
-    typename Visitor_,              ///< Child node
-    template<typename T, int N> typename UnaryOp_
+    typename Visitor_,             ///< Child node
+    template<typename T, int N, typename TPtr=T> typename UnaryOp_,
+    typename ElementPtr = ElementCompute_ ///< optional argument used when scalar is in different data types in device memory          
 >
 class VisitorOpUnary{
 public:
@@ -80,7 +81,7 @@ public:
     using AccumulatorAccessType = Array<ElementAccumulator, kElementsPerAccess>;
 
     /// Combination Op TODO: generalize this
-    using UnaryOp = UnaryOp_<ElementCompute, kElementsPerAccess>;
+    using UnaryOp = UnaryOp_<ElementCompute, kElementsPerAccess, ElementPtr>;
 
     static_assert(kElementsPerAccess==VisitAccessTypeVisitor::kElements, "kElementsPerAccess mismatches with Visitor");
 
@@ -195,7 +196,31 @@ public:
         /// Type conversion
         NumericArrayConverter<ElementCompute, ElementVisit, kElementsPerAccess> source_converter;
 
-        cutlass::multiplies<VisitAccessType> multiply_op;
+        return unary_op(source_converter(result));
+    }
+
+    /// @brief Overloaded visit function to match the abstraction of softmax
+    /// @param row_idx: the current row in output tensor
+    /// @param column_idx: the current column in output tensor of the first element in vector
+    /// @param accum: softmax accumulator from mainloop
+    /// @return the result from visitor
+    CUTLASS_DEVICE
+    VisitAccessType visit(
+        int row_idx,
+        int column_idx,
+        AccumulatorAccessType const &accum
+    ) { 
+        /// Get result from visitor A and visitor B
+        VisitAccessTypeVisitor result;
+
+        if (unary_op.guard()){
+            result = visitor_op.visit(row_idx, column_idx, accum);
+        } else {
+            result.clear();
+        }
+
+        /// Type conversion
+        NumericArrayConverter<ElementCompute, ElementVisit, kElementsPerAccess> source_converter;
 
         return unary_op(source_converter(result));
     }

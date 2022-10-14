@@ -36,6 +36,7 @@
 
 #pragma once
 #include "cutlass/cutlass.h"
+#include "stdio.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -52,7 +53,8 @@ namespace threadblock {
 template <
     typename ElementAccumulator_,    ///< Data type of the Accumulator
     typename ElementFragment_,       ///< Data type used to cache vector in register
-    typename InputTileIterator_      ///< Tile iterator type to read the broadcasted tensor
+    typename InputTileIterator_,     ///< Tile iterator type to read the broadcasted tensor
+    typename ElementInput_ = typename InputTileIterator_::Element  /// input data type
 >
 class VisitorOpColumnBroadcast {
 public:
@@ -60,7 +62,7 @@ public:
 
     static int const kElementsPerAccess = InputTileIterator::kElementsPerAccess;
     using ElementAccumulator = ElementAccumulator_;
-    using ElementVector = typename InputTileIterator::Element;
+    using ElementVector = ElementInput_;
     using ElementFragment = ElementFragment_;
 
     using VisitAccessType = Array<ElementFragment, kElementsPerAccess>;
@@ -156,6 +158,8 @@ private:
 
     int64_t batch_stride_;
 
+    ElementFragment broadcast_data;
+
 public:
     /// Constructs the function object
     CUTLASS_HOST_DEVICE
@@ -199,13 +203,29 @@ public:
         AccumulatorAccessType const &accum
     ) {
         // get pointer
-        thread_offset_row_ = thread_start_row_ + ThreadMap::iteration_offset(frag_idx).row();
-        
-        ElementFragment broadcast_data = ElementFragment(*(broadcast_ptr + thread_offset_row_));
-
-        broadcast_fragment.fill(broadcast_data);
+        if (column_idx == 0){
+            thread_offset_row_ = thread_start_row_ + ThreadMap::iteration_offset(frag_idx).row();
+            broadcast_data = ElementFragment(*(broadcast_ptr + thread_offset_row_));
+            broadcast_fragment.fill(broadcast_data);
+        }
 
         return broadcast_fragment;
+    }
+
+    CUTLASS_DEVICE
+    VisitAccessType visit(
+        int row_idx,
+        int column_idx,
+        AccumulatorAccessType const &accum
+    ) {
+        // load element
+        if (column_idx < ThreadMap::Shape::kColumn) {
+            broadcast_data = ElementFragment(*(broadcast_ptr + row_idx));
+            broadcast_fragment.fill(broadcast_data);
+        }
+
+        return broadcast_fragment;
+        
     }
 
     CUTLASS_DEVICE

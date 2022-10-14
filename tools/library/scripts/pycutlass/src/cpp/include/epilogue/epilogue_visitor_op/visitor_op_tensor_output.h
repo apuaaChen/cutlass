@@ -209,6 +209,32 @@ public:
 
         return result;
     }
+    
+    /// @brief Overloaded visit function to match the abstraction of softmax
+    /// @param row_idx: the current row in output tensor
+    /// @param column_idx: the current column in output tensor of the first element in vector
+    /// @param accum: softmax accumulator from mainloop
+    /// @return the result from visitor
+    CUTLASS_DEVICE
+    VisitAccessType visit(
+        int row_idx,
+        int column_idx,
+        AccumulatorAccessType const &accum
+    ) {
+        /// Get result from visitor
+        VisitAccessTypeVisitor result = visitor_.visit(row_idx, column_idx, accum);
+
+        // Column guard
+        bool column_guard = (column_idx < problem_size.column());
+
+        if (column_guard) {
+            NumericArrayConverter<ElementOutput, ElementVisitor, kElementsPerAccess> output_converter;
+            iterator_T_.store(output_converter(result));
+        }
+
+        return result;
+
+    }
 
     CUTLASS_DEVICE
     void end_row(int row_idx) {

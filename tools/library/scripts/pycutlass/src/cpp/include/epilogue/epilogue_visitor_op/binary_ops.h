@@ -44,7 +44,7 @@ namespace cutlass {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-/// Scalar multiplication
+/// vector addition
 template <typename T, int N>
 struct VectorAdd {
 
@@ -73,6 +73,74 @@ struct VectorAdd {
     Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
         cutlass::plus<Array<T, N>> add_op;
         return add_op(lhs, rhs);
+    }
+
+};
+
+
+/// vector subtraction
+template <typename T, int N>
+struct VectorSub {
+
+    struct Arguments {
+        int tmp;
+
+        CUTLASS_HOST_DEVICE
+        Arguments():tmp(0){ }
+
+        CUTLASS_HOST_DEVICE
+        Arguments(int tmp): tmp(tmp) { }
+    };
+    
+    struct Params {
+
+        CUTLASS_HOST_DEVICE
+        Params(Arguments const &args) { }
+    };
+
+    CUTLASS_HOST_DEVICE
+    VectorSub(
+        Params const &params
+    ) { }
+
+    CUTLASS_HOST_DEVICE
+    Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
+        cutlass::minus<Array<T, N>> minus_op;
+        return minus_op(lhs, rhs);
+    }
+
+};
+
+
+/// vector multiplication
+template <typename T, int N>
+struct VectorMult {
+
+    struct Arguments {
+        int tmp;
+
+        CUTLASS_HOST_DEVICE
+        Arguments():tmp(0){ }
+
+        CUTLASS_HOST_DEVICE
+        Arguments(int tmp): tmp(tmp) { }
+    };
+    
+    struct Params {
+
+        CUTLASS_HOST_DEVICE
+        Params(Arguments const &args) { }
+    };
+
+    CUTLASS_HOST_DEVICE
+    VectorMult(
+        Params const &params
+    ) { }
+
+    CUTLASS_HOST_DEVICE
+    Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
+        cutlass::multiplies<Array<T, N>> mult_op;
+        return mult_op(lhs, rhs);
     }
 
 };

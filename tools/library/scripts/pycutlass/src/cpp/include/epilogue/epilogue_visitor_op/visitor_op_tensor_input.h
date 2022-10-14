@@ -170,7 +170,19 @@ public:
         return source;
     }
 
-     CUTLASS_DEVICE
+    CUTLASS_DEVICE
+    VisitAccessType visit(
+        int row_idx,
+        int column_idx,
+        AccumulatorAccessType const &accum
+    ) {
+        fragment_T_.clear();
+        iterator_T_.load(fragment_T_);
+
+        return fragment_T_;
+    }
+
+    CUTLASS_DEVICE
     void end_row(int row_idx) { }
 
     CUTLASS_DEVICE

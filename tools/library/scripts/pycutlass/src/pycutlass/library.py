@@ -127,7 +127,7 @@ DataTypeTag = {
     cutlass.int8: "int8_t",
     cutlass.dtype.s16: "int16_t",
     cutlass.int32: "int32_t",
-    cutlass.dtype.s64: "int64_t",
+    cutlass.int64: "int64_t",
     cutlass.float16: "cutlass::half_t",
     cutlass.bfloat16: "cutlass::bfloat16_t",
     cutlass.float32: "float",

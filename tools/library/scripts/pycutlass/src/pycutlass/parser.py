@@ -70,7 +70,7 @@ class UnaryNode:
     # Concept: this is created by the BinOp Node in python ast
     def __init__(self, 
         element_accumulator, element_compute, elements_per_access,
-        node, args) -> None:
+        node, args, element_ptr=None) -> None:
         if isinstance(node, BinOpNode):
             self.op = node.op
         elif isinstance(node, ast.Call):
@@ -85,6 +85,7 @@ class UnaryNode:
         self.tag = "Unary" + self.op + str(UnaryNode.cnt)
         self.id = self.op + str(UnaryNode.cnt)
         self.args = args
+        self.element_ptr = element_ptr
         UnaryNode.cnt += 1
 
         self.type = "tensor"
@@ -99,7 +100,7 @@ class UnaryNode:
     def get_epilogue_node(self, visitors):
         self.epilogue_node = UnaryOp(
             self.element_accumulator, self.element_compute, 
-            self.elements_per_access, *visitors, self.epilogue_op)
+            self.elements_per_access, *visitors, self.epilogue_op, self.element_ptr)
     
     def get_argument(self, visitor_args, kwargs):
         epilogue_ops = []
@@ -110,6 +111,32 @@ class UnaryNode:
                 epilogue_ops.append(arg) # direct arguments like constant
         self.argument = self.epilogue_node.argument_type(self.epilogue_op.argument_type(*epilogue_ops), *visitor_args)
 
+
+class OneHotNode:
+    cnt = 0
+    # Concept: this is created by the BinOp Node in python ast
+    def __init__(self, 
+        element_accumulator, element_compute, elements_per_access,
+        node) -> None:
+        self.op = "one_hot"
+        self.tag = "OneHot" + str(OneHotNode.cnt)
+        self.id = self.op + str(OneHotNode.cnt)
+        OneHotNode.cnt += 1
+
+        self.type = "tensor"
+
+        # data types
+        self.element_accumulator = element_accumulator
+        self.element_compute = element_compute
+        self.elements_per_access = elements_per_access
+    
+    def get_epilogue_node(self, visitors):
+        self.epilogue_node = OneHotOp(
+            self.element_accumulator, self.element_compute, 
+            self.elements_per_access, *visitors)
+    
+    def get_argument(self, visitor_args, kwargs):
+        self.argument = self.epilogue_node.argument_type(*visitor_args)
 
 class BinOpNode:
     cnt = 0
@@ -210,16 +237,17 @@ class RowBroadcastNode(NameNode):
 
 class ColumnBroadcastNode(NameNode):
     # Concept: VisitorOpColumnBroadcast
-    def __init__(self, element_accumulator, element_fragment, node) -> None:
+    def __init__(self, element_accumulator, element_fragment, node, element_input=None) -> None:
         super().__init__(node)
         self.tag = "ColumnBroadcast:" + self.tag
         self.type = "tensor"
         self.element_accumulator = element_accumulator
         self.element_fragment = element_fragment
+        self.element_input = element_input
     
     def get_epilogue_node(self, *args):
         self.epilogue_node = ColumnBroadcastOp(
-            self.element_accumulator, self.element_fragment)
+            self.element_accumulator, self.element_fragment, self.element_input)
     
     def get_argument(self, visitor_args, kwargs):
         self.argument = self.epilogue_node.argument_type(kwargs[self.id + "_ptr"], kwargs["problem_size"][0])

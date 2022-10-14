@@ -217,6 +217,31 @@ public:
         );
     }
 
+    /// @brief Overloaded visit function to match the abstraction of softmax
+    /// @param row_idx: the current row in output tensor
+    /// @param column_idx: the current column in output tensor of the first element in vector
+    /// @param accum: softmax accumulator from mainloop
+    /// @return the result of binary op
+    CUTLASS_DEVICE
+    VisitAccessType visit(
+        int row_idx,
+        int column_idx,
+        AccumulatorAccessType const &accum
+    ) {
+        /// Get result from visitor A and visitor B
+        VisitAccessTypeA result_A = visitor_a_op.visit(row_idx, column_idx, accum);
+        VisitAccessTypeB result_B = visitor_b_op.visit(row_idx, column_idx, accum);
+
+        /// Type conversion
+        NumericArrayConverter<ElementCompute, ElementA, kElementsPerAccess> source_converter_A;
+        NumericArrayConverter<ElementCompute, ElementB, kElementsPerAccess> source_converter_B;
+
+        return binary_op(
+            source_converter_A(result_A),
+            source_converter_B(result_B)
+        );
+    }
+
     CUTLASS_DEVICE
     void end_row(int row_idx) {
         visitor_a_op.end_row(row_idx);

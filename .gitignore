@@ -1,2 +1,11 @@
 # PyCache files
 __pycache__/
+tools/library/scripts/pycutlass/build/*
+tools/library/scripts/pycutlass/dist/PyCutlass-0.0.1-py3.8-linux-x86_64.egg
+examples/40_cutlass_py/compiled_cache.db
+.vscode/settings.json
+tools/library/scripts/pycutlass/src/PyCutlass.egg-info/dependency_links.txt
+tools/library/scripts/pycutlass/src/PyCutlass.egg-info/requires.txt
+tools/library/scripts/pycutlass/src/PyCutlass.egg-info/SOURCES.txt
+tools/library/scripts/pycutlass/src/PyCutlass.egg-info/top_level.txt
+tools/library/scripts/pycutlass/src/PyCutlass.egg-info/PKG-INFO

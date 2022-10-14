@@ -59,6 +59,7 @@
 #include "epilogue_visitor_op/visitor_op_column_broadcast.h"
 #include "epilogue_visitor_op/visitor_op_unary.h"
 #include "epilogue_visitor_op/visitor_op_binary.h"
+#include "epilogue_visitor_op/visitor_op_one_hot.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -193,6 +194,14 @@ public:
     int frag_idx,
     AccumulatorAccessType const &accum) {
       output_op.visit(iter_idx, row_idx, column_idx, frag_idx, accum);
+  }
+
+  CUTLASS_DEVICE
+  void visit(
+    int row_idx,
+    int column_idx,
+    AccumulatorAccessType const &accum) {
+      output_op.visit(row_idx, column_idx, accum);
   }
 
   /// Called at the start of a row

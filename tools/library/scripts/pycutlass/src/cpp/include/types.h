@@ -42,7 +42,7 @@ namespace py = pybind11;
 
 namespace cutlass {
 
-/// IEEE 32-bit signed integer
+/// IEEE 8-bit signed integer
 struct alignas(1) int8 {
     int8_t storage;
     explicit int8(int x) {
@@ -67,6 +67,19 @@ struct alignas(4) int32 {
 
     int c_value(){return storage;}
 };
+
+/// IEEE 64-bit signed integer
+struct alignas(8) int64 {
+    int64_t storage;
+    explicit int64(int x) {
+        storage = int64_t(x);
+    }
+    explicit int64(float x) {
+        storage = int64_t(x);
+    }
+    int64_t c_value(){return storage;}
+};
+
 /// IEEE single-precision floating-point type
 struct alignas(4) float32 {
     float storage;
@@ -106,6 +119,12 @@ void bind_cutlass_types(py::module &m) {
         .def(py::init<int>())
         .def_readwrite("storage", &cutlass::int32::storage)
         .def("value", &cutlass::int32::c_value);
+    
+    // s64
+    py::class_<cutlass::int64>(m, "int64")
+        .def(py::init<int>())
+        .def_readwrite("storage", &cutlass::int64::storage)
+        .def("value", &cutlass::int64::c_value);
 
     // f16
     py::class_<cutlass::half_t>(m, "float16")

@@ -46,27 +46,34 @@ namespace cutlass {
 
 
 /// Scalar multiplication
-template <typename T, int N>
+/// The TPtr is used to handle cases where the pointer has different data type
+template <typename T, int N, typename TPtr=T>
 struct Mult {
 
     struct Arguments {
         T alpha;
+        TPtr* alpha_ptr;
 
         CUTLASS_HOST_DEVICE
-        Arguments():alpha(T(1.0)){ }
+        Arguments(): alpha(T(1.0)), alpha_ptr(nullptr) { }
 
         CUTLASS_HOST_DEVICE
-        Arguments(T alpha): alpha(alpha) { }
+        Arguments(T alpha): alpha(alpha), alpha_ptr(nullptr) { }
+
+        CUTLASS_HOST_DEVICE
+        Arguments(TPtr* alpha_ptr): alpha(T(0.0)), alpha_ptr(alpha_ptr) { }
     };
-    
+
     struct Params {
-        T alpha;   ///< scales accumulators
+        T alpha;      ///< scalar adder
+        TPtr* alpha_ptr; ///< fetch scalar from device
 
         CUTLASS_HOST_DEVICE
-        Params():alpha(T(1.0)){ }
+        Params(): alpha(T(1.0)), alpha_ptr(nullptr) { }
 
         CUTLASS_HOST_DEVICE
-        Params(Arguments const &args): alpha(args.alpha) { }
+        Params(Arguments const &args): 
+            alpha(args.alpha), alpha_ptr(args.alpha_ptr) { }
     };
 
     T alpha_;
@@ -74,9 +81,10 @@ struct Mult {
     CUTLASS_HOST_DEVICE
     Mult(
         Params const &params
-    ):
-        alpha_(params.alpha)
-    { }
+    ) {
+        if (params.alpha_ptr) alpha_ = T(*(params.alpha_ptr));
+        else alpha_ = params.alpha;
+    }
 
     CUTLASS_HOST_DEVICE
     Array<T, N> operator()(Array<T, N> const &source) const {
@@ -92,8 +100,116 @@ struct Mult {
 };
 
 
+/// Scalar addition
+template <typename T, int N, typename TPtr=T>
+struct Add {
+
+    struct Arguments {
+        T alpha;
+        TPtr* alpha_ptr;
+
+        CUTLASS_HOST_DEVICE
+        Arguments(): alpha(T(0.0)), alpha_ptr(nullptr) { }
+
+        CUTLASS_HOST_DEVICE
+        Arguments(T alpha): alpha(alpha), alpha_ptr(nullptr) { }
+
+        CUTLASS_HOST_DEVICE
+        Arguments(TPtr* alpha_ptr): alpha(T(0.0)), alpha_ptr(alpha_ptr) { }
+    };
+
+    struct Params {
+        T alpha;      ///< scalar adder
+        TPtr* alpha_ptr; ///< fetch scalar from device
+
+        CUTLASS_HOST_DEVICE
+        Params(): alpha(T(0.0)), alpha_ptr(nullptr) { }
+
+        CUTLASS_HOST_DEVICE
+        Params(Arguments const &args): 
+            alpha(args.alpha), alpha_ptr(args.alpha_ptr) { }
+    };
+
+    T alpha_;
+    CUTLASS_HOST_DEVICE
+    Add(
+        Params const &params
+    ) {
+        if (params.alpha_ptr) alpha_ = T(*(params.alpha_ptr));
+        else alpha_ = params.alpha;
+    }
+
+    CUTLASS_HOST_DEVICE
+    Array<T, N> operator()(Array<T, N> const &source) const {
+        cutlass::plus<Array<T, N>> plus_op;
+        return plus_op(source, alpha_);
+    }
+
+    CUTLASS_HOST_DEVICE
+    bool guard() {
+        return true;
+    }
+};
+
+
+/// Scalar addition
+template <typename T, int N, typename TPtr=T>
+struct Ne {
+
+    struct Arguments {
+        T alpha;
+        TPtr* alpha_ptr;
+
+        CUTLASS_HOST_DEVICE
+        Arguments(): alpha(T(0.0)), alpha_ptr(nullptr) { }
+
+        CUTLASS_HOST_DEVICE
+        Arguments(T alpha): alpha(alpha), alpha_ptr(nullptr) { }
+
+        CUTLASS_HOST_DEVICE
+        Arguments(TPtr* alpha_ptr): alpha(T(0.0)), alpha_ptr(alpha_ptr) { }
+    };
+
+    struct Params {
+        T alpha;      ///< scalar adder
+        TPtr* alpha_ptr; ///< fetch scalar from device
+
+        CUTLASS_HOST_DEVICE
+        Params(): alpha(T(0.0)), alpha_ptr(nullptr) { }
+
+        CUTLASS_HOST_DEVICE
+        Params(Arguments const &args): 
+            alpha(args.alpha), alpha_ptr(args.alpha_ptr) { }
+    };
+
+    T alpha_;
+    CUTLASS_HOST_DEVICE
+    Ne(
+        Params const &params
+    ) {
+        if (params.alpha_ptr) alpha_ = T(*(params.alpha_ptr));
+        else alpha_ = params.alpha;
+    }
+
+    CUTLASS_HOST_DEVICE
+    Array<T, N> operator()(Array<T, N> const &source) const {
+        Array<T, N> result;
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < N; i ++) {
+            result[i] = T(source[i] != alpha_);
+        }
+        return result;
+    }
+
+    CUTLASS_HOST_DEVICE
+    bool guard() {
+        return true;
+    }
+};
+
+
 /// ReLU
-template <typename T, int N>
+template <typename T, int N, typename TPtr=T>
 struct ReLUVisitor {
     struct Arguments {
         T threshold;
@@ -134,7 +250,7 @@ struct ReLUVisitor {
 };
 
 /// leakyReLU
-template <typename T, int N>
+template <typename T, int N, typename TPtr=T>
 struct LeakyReLUVisitor {
     struct Arguments {
         T leaky_alpha;
@@ -176,7 +292,7 @@ struct LeakyReLUVisitor {
 };
 
 /// Tanh
-template <typename T, int N>
+template <typename T, int N, typename TPtr=T>
 struct TanhVisitor {
     /// Argument
     struct Arguments {
