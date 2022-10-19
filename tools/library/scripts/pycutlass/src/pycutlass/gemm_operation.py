@@ -797,14 +797,15 @@ class GemmOperationBase:
         else:
             self.visitor = False
 
-    def run(self, arguments: GemmArguments) -> cuda.CUresult:
+    def run(self, arguments: GemmArguments, stream=cuda.CUstream(0)) -> cuda.CUresult:
         """
         Configure and launch the cuda kernel with input arguments
         """
         err = self.rt_module.run(
             arguments.host_workspace,
             arguments.device_workspace,
-            arguments.launch_config)
+            arguments.launch_config,
+            stream=stream)
 
         if err != cuda.CUresult.CUDA_SUCCESS:
             raise RuntimeError('CUDA Error %s' % str(err))
