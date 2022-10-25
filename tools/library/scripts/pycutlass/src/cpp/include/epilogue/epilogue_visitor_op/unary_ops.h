@@ -342,6 +342,67 @@ struct TanhVisitor {
     }
 };
 
+
+/// GeLU: tanh approximation
+// https://github.com/pytorch/pytorch/blob/d321be61c07bc1201c7fe10cd03d045277a326c1/aten/src/ATen/native/cuda/ActivationGeluKernel.cu
+template <typename T, int N, typename TPtr=T>
+struct GeluForwardVisitor {
+
+    static const T _M_SQRT2 = 1.41421356237309504880;
+    static const T _M_2_SQRTPI = 1.12837916709551257390;
+
+    static const T kBeta = _M_SQRT2 * _M_2_SQRTPI * T(0.5);
+    static const T kKappa = 0.044715;
+    /// Argument
+    struct Arguments {
+        // a placeholder argument to ensure correctness of ctypes
+        int tmp;
+
+        CUTLASS_HOST_DEVICE
+        Arguments(): tmp(0) { };
+
+        CUTLASS_HOST_DEVICE
+        Arguments(int tmp): tmp(tmp) { };
+    };
+
+    /// Param
+    struct Params {
+        CUTLASS_HOST_DEVICE
+        Params(){ };
+        Params(Arguments const &args) { }
+    };
+
+    /// Constructor
+    CUTLASS_HOST_DEVICE
+    GeluForwardVisitor(Params const &params) { }
+
+    // scalar operator
+    CUTLASS_HOST_DEVICE
+    T gelu_op(T const &scalar) const {
+        T x_cube = scalar * scalar * scalar;
+        T inner = kBeta * (scalar + kKappa * x_cube);
+        return T(0.5) * scalar * (T(1.0) + fast_tanh(inner));
+    }
+
+    /// vector operator
+    CUTLASS_HOST_DEVICE
+    Array<T, N> operator()(Array<T, N> const &frag) const {
+        Array<T, N> y;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int i=0; i < N; ++i) {
+            y[i] = gelu_op(frag[i]);
+        }
+
+        return y;
+    }
+
+    CUTLASS_HOST_DEVICE
+    bool guard() {
+        return true;
+    }
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass

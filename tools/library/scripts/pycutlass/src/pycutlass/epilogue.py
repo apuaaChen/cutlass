@@ -382,6 +382,23 @@ class tanh(ActivationFunctor):
     def numpy(x: np.ndarray):
         return np.tanh(x)
 
+# GeLU operator with tanh approximation
+class GeLU(ActivationFunctor):
+    tag = "cutlass::epilogue::thread::GeLU"
+
+    def __init__(self, element_compute) -> None:
+        super().__init__(element_compute)
+        class _Arguments(ctypes.Structure):
+            _fields_ = [
+                ("tmp", ctypes.c_int)
+            ]
+            def __init__(self, *args) -> None:
+                self.tmp = 0
+        self.argument_type = _Arguments
+    
+    def emit_visitor(self):
+        return "cutlass::GeluForwardVisitor"
+
 def sigmoid_op(x: np.ndarray):
     return 1. / (1. + np.exp(-x))
 
@@ -686,6 +703,19 @@ class VectorMult:
 
     def emit(self):
         return "cutlass::VectorMult"
+
+class VectorGeluBackward:
+    def __init__(self, *args) -> None:
+        class _Arguments(ctypes.Structure):
+            _fields_ = [
+                ("tmp", ctypes.c_int)
+            ]
+            def __init__(self, *args) -> None:
+                self.tmp = 0
+        self.argument_type = _Arguments
+    
+    def emit(self):
+        return "cutlass::VectorGeluBackward"
         
 
 class BinaryOp:
@@ -1028,7 +1058,7 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpTensorInput<
     ${element_accumulator}, ${input_tile_iterator}>;
 """
     counter = 0
-    def __init__(self, element_accumulator) -> None:
+    def __init__(self, element_accumulator, element_input=None) -> None:
         self.element_accumulator = element_accumulator
 
         self.instance_name = "TensorInputOp%d" % TensorInputOp.counter
@@ -1046,6 +1076,7 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpTensorInput<
                 self.batch_stride = batch_stride
         
         self.argument_type = _Arguments
+        self.element_input = element_input
     
     def emit(self, operation):
         values = {
@@ -1053,7 +1084,10 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpTensorInput<
             "element_accumulator": DataTypeTag[self.element_accumulator],
             "input_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator"
         }
-        return SubstituteTemplate(self.Template, values)
+        operator = SubstituteTemplate(self.Template, values)
+        if self.element_input is not None:
+            return operator[:-3] + ", " + DataTypeTag[self.element_input] + ">;"
+        return operator
 
 class TensorOutputOp:
     Template = """

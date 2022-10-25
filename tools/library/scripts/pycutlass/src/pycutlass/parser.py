@@ -182,7 +182,10 @@ class BinOpNode:
     def __init__(self, 
         element_accumulator, element_compute, elements_per_access,
         node) -> None:
-        self.op = operators[type(node.op)]
+        if isinstance(node, ast.BinOp):
+            self.op = operators[type(node.op)]
+        elif isinstance(node, ast.Call):
+            self.op = node.func.id
         self.tag = "Binary" + self.op + str(BinOpNode.cnt)
         self.id = self.op + str(BinOpNode.cnt)
         self.args = None
@@ -242,14 +245,15 @@ class AccumulatorNode(NameNode):
 
 class TensorInputNode(NameNode):
     # Concept: VisitorOpTensorInput
-    def __init__(self, element_accumulator, node) -> None:
+    def __init__(self, element_accumulator, node, element_input=None) -> None:
         super().__init__(node)
         self.tag = "TensorInput:" + self.tag
         self.type = "tensor"
         self.element_accumulator = element_accumulator
+        self.element_input = element_input
     
     def get_epilogue_node(self, *args):
-        self.epilogue_node = TensorInputOp(self.element_accumulator)
+        self.epilogue_node = TensorInputOp(self.element_accumulator, self.element_input)
     
     def get_argument(self, visitor_args, kwargs):
         self.argument = self.epilogue_node.argument_type(
@@ -448,7 +452,6 @@ class EpilogueAST(ast.NodeVisitor):
         self.stack.pop()
     
     def visit_Call(self, node):
-        print(node.func.id)
         if isinstance(node.func, ast.Name):
             func_type = node.func.id
         elif isinstance(node.func, ast.Attribute):
@@ -459,7 +462,6 @@ class EpilogueAST(ast.NodeVisitor):
             self.visit(node.args[0])
         elif func_type == "dropout_forward":
             arg_list = []
-            print(node.args)
             for idx, arg in enumerate(node.args):
                 if idx == 0: continue
                 if isinstance(arg, ast.Constant):
@@ -468,13 +470,20 @@ class EpilogueAST(ast.NodeVisitor):
                     arg_list.append(arg.id)
                 else:
                     raise TypeError
-            print(arg_list)
             dropout_node = DropoutForwardNode(
                 self.element_accumulator, self.element_compute, self.elements_per_access,
                 arg_list, node)
             self.epilogue_tree.create_node(dropout_node.tag, dropout_node.id, parent=self.stack[-1], data=dropout_node)
             self.stack.append(dropout_node.id)
             self.visit(node.args[0])
+            self.stack.pop()
+        elif func_type == "GeluBackward":
+            binop = BinOpNode(self.element_accumulator, self.element_compute, 
+                self.elements_per_access, node)
+            self.epilogue_tree.create_node(binop.tag, binop.id, data=binop, parent=self.stack[-1])
+            self.stack.append(binop.id)
+            self.visit(node.args[0])
+            self.visit(node.args[1])
             self.stack.pop()
         else:
             arg_list = []

@@ -52,15 +52,21 @@ namespace threadblock {
 /// It can only be a leaf node in the epilogue tree
 template <
     typename ElementAccumulator_,  ///< Data type of the Accumulator
-    typename InputTileIterator_    ///< Tile iterator type to read the tensor
+    typename InputTileIterator_,   ///< Tile iterator type to read the tensor
+    typename ElementInput_=typename InputTileIterator_::Element /// data type of input data
 >
 class VisitorOpTensorInput {
 public:
+    using ElementInput = ElementInput_;
     using ElementAccumulator = ElementAccumulator_;
-    using InputTileIterator = InputTileIterator_;
+
+    using InputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
+        typename InputTileIterator_::ThreadMap,
+        ElementInput
+    >;
 
     static int const kElementsPerAccess = InputTileIterator::kElementsPerAccess;
-    using ElementInput = typename InputTileIterator::Element;
+    
 
     using VisitAccessType = Array<ElementInput, kElementsPerAccess>;
 

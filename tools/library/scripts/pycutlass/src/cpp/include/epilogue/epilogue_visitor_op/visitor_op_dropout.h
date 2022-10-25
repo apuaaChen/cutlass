@@ -174,6 +174,7 @@ private:
     RandType rand;
 
     float p;
+    ElementCompute scale_;
 
     cutlass::multiplies<VisitAccessType> mul_op;
 
@@ -206,7 +207,8 @@ public:
                 threadblock_offset
             )
         ),
-        batch_stride_(params.batch_stride)
+        batch_stride_(params.batch_stride),
+        scale_(1.0 / params.p)
     {
         /// unsigned long long seed, unsigned long long subsequence, unsigned long long offset, curandStatePhilox4_32_10_t
         curand_init(params.seed, uint64_t(thread_idx), params.offset, &state);
@@ -262,7 +264,7 @@ public:
         /// Type conversion of the dropout mask
         NumericArrayConverter<ElementCompute, ElementVisit, kElementsPerAccess> src_converter;
 
-        VisitAccessType output = mul_op(src_converter(result), mask);
+        VisitAccessType output = mul_op(mul_op(src_converter(result), mask), scale_);
 
         // Column guard
         MatrixCoord thread_offset_ = iterator_T_.thread_start() + MaskOutputTileIterator::ThreadMap::iteration_offset(frag_idx);
