@@ -57,6 +57,7 @@ template <
     typename ElementAccumulator_,  ///< Data type of the Accumulator
     typename ElementCompute_,      ///< Data type used to compute dropout
     int      kElementsPerAccess_,  ///< Number of elements computed per operation
+    typename OutputTileIterator_,  ///< Tile iterator type to write the tensor
     typename ElementMask_,         ///< Data type of the output mask
     typename Visitor_              ///< Child Node
 >
@@ -85,6 +86,18 @@ public:
 
     using RandType = Array<float, kElementsPerAccess>;
 
+    /// create the mask output iterator
+
+    using ElementMask = ElementMask_;
+    using MaskOutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
+        typename OutputTileIterator_::ThreadMap,
+        ElementMask
+    >;
+
+    /// Fragment type of output mask
+    using MaskAccessType =Array<ElementMask, kElementsPerAccess>;
+
+
     /// SMEM buffer class required in the epilogue visitor
     struct SharedStorage {
         typename Visitor::SharedStorage storage_visitor;
@@ -98,22 +111,29 @@ public:
         float p;                    ///< Probability of dropout
         uint64_t seed;              ///< random seed
         uint64_t offset;            ///< Absolute offset into subsequence
+        ElementMask* mask_ptr;      ///< Pointer to the output mask in device memory
+        int ldt;                    ///< Leading dimension of the mask
+        int64_t batch_stride;       ///< batch stride
         typename Visitor::Arguments visitor_arg;    ///< Argument type for visitor
 
         //
         // Methods
         //
         CUTLASS_HOST_DEVICE
-        Arguments() { }
+        Arguments(): mask_ptr(nullptr) { }
 
         CUTLASS_HOST_DEVICE
         Arguments(
             float p,
             uint64_t seed,
             uint64_t offset,
+            ElementMask* mask_ptr,
+            int ldt,
+            int64_t batch_stride,
             typename Visitor::Arguments visitor_arg
         ):
-            p(p), seed(seed), offset(offset), visitor_arg(visitor_arg)
+            p(p), seed(seed), offset(offset), visitor_arg(visitor_arg),
+            mask_ptr(mask_ptr), ldt(ldt), batch_stride(batch_stride)
         { }
     };
 
@@ -124,6 +144,10 @@ public:
         uint64_t offset;            ///< Absolute offset into subsequence
         typename Visitor::Params visitor_param;    ///< Argument type for visitor
 
+        typename MaskOutputTileIterator::Params params_mask;
+        ElementMask *mask_ptr;
+        int64_t batch_stride;
+
         //
         // Methods
         //
@@ -133,7 +157,10 @@ public:
         CUTLASS_HOST_DEVICE
         Params(Arguments const &args):
             p(args.p), seed(args.seed), offset(args.offset),
-            visitor_param(args.visitor_arg)
+            visitor_param(args.visitor_arg),
+            params_mask(args.ldt),
+            mask_ptr(args.mask_ptr),
+            batch_stride(args.batch_stride)
         { }
     };
 
@@ -150,6 +177,10 @@ private:
 
     cutlass::multiplies<VisitAccessType> mul_op;
 
+    MaskOutputTileIterator iterator_T_;
+    typename MaskOutputTileIterator::Fragment fragment_T_;
+    int64_t batch_stride_;
+
 public:
     /// Constructs the function object
     CUTLASS_HOST_DEVICE
@@ -165,7 +196,17 @@ public:
         thread_idx_(thread_idx),
         threadblock_offset(threadblock_offset),
         problem_size_(problem_size),
-        p(params.p)
+        p(params.p),
+        iterator_T_(
+            MaskOutputTileIterator(
+                params.params_mask,
+                params.mask_ptr,
+                problem_size,
+                thread_idx,
+                threadblock_offset
+            )
+        ),
+        batch_stride_(params.batch_stride)
     {
         /// unsigned long long seed, unsigned long long subsequence, unsigned long long offset, curandStatePhilox4_32_10_t
         curand_init(params.seed, uint64_t(thread_idx), params.offset, &state);
@@ -173,6 +214,7 @@ public:
 
     CUTLASS_DEVICE
     void set_batch_index(int batch_idx) {
+        iterator_T_.add_pointer_offset(batch_idx * batch_stride_);
         visitor_.set_batch_index(batch_idx);
     }
 
@@ -183,6 +225,7 @@ public:
 
     CUTLASS_DEVICE
     void begin_step(int step_idx) {
+        fragment_T_.clear();
         visitor_.begin_step(step_idx);
     }
 
@@ -221,6 +264,16 @@ public:
 
         VisitAccessType output = mul_op(src_converter(result), mask);
 
+        // Column guard
+        MatrixCoord thread_offset_ = iterator_T_.thread_start() + MaskOutputTileIterator::ThreadMap::iteration_offset(frag_idx);
+        bool column_guard = (thread_offset_.column() < problem_size_.column());
+
+        if (column_guard) {
+            NumericArrayConverter<ElementMask, ElementVisit, kElementsPerAccess> mask_converter;
+            MaskAccessType &mask_output = reinterpret_cast<MaskAccessType *>(&fragment_T_)[frag_idx];
+            mask_output = mask_converter(mask);
+        }
+
         return output;
     }
 
@@ -232,6 +285,8 @@ public:
     CUTLASS_DEVICE
     void end_step(int step_idx) {
         visitor_.end_step(step_idx);
+        iterator_T_.store(fragment_T_);
+        ++iterator_T_;
     }
 
     CUTLASS_DEVICE

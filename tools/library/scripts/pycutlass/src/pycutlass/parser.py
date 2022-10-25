@@ -165,13 +165,15 @@ class DropoutForwardNode:
     
     def get_argument(self, visitor_args, kwargs):
         epilogue_ops = []
-        for arg in self.args:
+        for arg in self.args[0:3]:
             try:
                 epilogue_ops.append(kwargs[arg])
             except:
                 epilogue_ops.append(arg)
         self.argument = self.epilogue_node.argument_type(
-            *epilogue_ops, *visitor_args
+            *epilogue_ops, kwargs[self.args[3] + '_ptr'], 
+            kwargs["problem_size"][1], kwargs["problem_size"][0] * kwargs["problem_size"][1], 
+            *visitor_args
         )
 
 class BinOpNode:

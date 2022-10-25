@@ -898,7 +898,7 @@ ${visitor}
 
 using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpDropoutForward<
     ${element_accumulator}, ${element_compute}, ${elements_per_access},
-    ${element_mask}, ${visitor_name}>;
+    ${output_tile_iterator}, ${element_mask}, ${visitor_name}>;
 """
     counter = 0
     def __init__(self, element_accumulator, element_compute, 
@@ -919,12 +919,18 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpDropoutForward
                 ("p", ctypes.c_float),
                 ("seed", ctypes.c_uint64),
                 ("offset", ctypes.c_uint64),
+                ("mask_ptr", ctypes.c_void_p),
+                ("ldt", ctypes.c_int),
+                ("batch_stride", ctypes.c_longlong),
                 ("visitor_arg", self.visitor.argument_type)
             ]
-            def __init__(self, p, seed, offset, visitor_arg) -> None:
+            def __init__(self, p, seed, offset, mask_ptr, ldt, batch_stride, visitor_arg) -> None:
                 self.p = p
                 self.seed = seed
                 self.offset = offset
+                self.mask_ptr = int(mask_ptr)
+                self.ldt = int(ldt)
+                self.batch_stride = batch_stride
                 self.visitor_arg = visitor_arg
         
         self.argument_type = _Arguments
@@ -936,7 +942,8 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpDropoutForward
             "elements_per_access": str(self.elements_per_access),
             "element_mask": DataTypeTag[self.element_mask],
             "visitor_name": self.visitor.instance_name,
-            "visitor": self.visitor.emit(operation)
+            "visitor": self.visitor.emit(operation),
+            "output_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator",
         }
         return SubstituteTemplate(self.Template, values)
 
