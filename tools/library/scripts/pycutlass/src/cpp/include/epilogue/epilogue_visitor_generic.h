@@ -60,6 +60,7 @@
 #include "epilogue_visitor_op/visitor_op_unary.h"
 #include "epilogue_visitor_op/visitor_op_binary.h"
 #include "epilogue_visitor_op/visitor_op_one_hot.h"
+#include "epilogue_visitor_op/visitor_op_dropout.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

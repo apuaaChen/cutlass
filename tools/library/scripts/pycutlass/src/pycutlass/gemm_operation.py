@@ -310,6 +310,162 @@ class GemmArguments(ArgumentBase):
         self.launch_config = launch_config
 
 
+class BatchedGemmPermutedArguments(GemmArguments):
+    """
+    Argument wrapper for GEMM. It encodes problem information and 
+    user-provide tensors into the kernel's argument
+
+    :param operation: the GEMM operation to take the argument
+    :type operation: :class:`pycutlass.GemmOperationUniversal` |
+     :class:`pycutlass.GemmOperationGrouped`
+    
+    :param problem_size: GEMM problem size gemm(M, N, K)
+    :type operation: :class:`cutlass.gemm.GemmCoord`
+
+    :param A: tensor A
+    :type A: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param B: tensor B
+    :type B: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param C: tensor C
+    :type C: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param D: tensor D
+    :type D: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param permute_A: permutation of [0, 1, 2] applied to A
+    :type permute_A: list[int]
+
+    :param permute_B: permutation of [0, 1, 2] applied to B
+    :type permute_B: list[int]
+
+    :param gemm_mode: GEMM mode
+    :type gemm_mode: :class:`cutlass.gemm.Mode`
+
+    :param output_op: output operator, optional
+    :type output_op: :class:`pycutlass.LinearCombinationFunctorArguments`
+    """
+
+    def __init__(
+        self, operation: 'GemmOperation', problem_size: 'cutlass.gemm.GemmCoord', 
+        A: 'Tensor', B: 'Tensor', C: 'Tensor', D: 'Tensor', 
+        permute_A: 'list[int]', permute_B: 'list[int]', batch: 'int',
+        **kwargs):
+        # TODO: maybe the 
+        # super().__init__(operation, problem_size, A, B, C, D, gemm_mode, **kwargs)
+
+        # the permute is only meaningful under batched mode
+        # otherwise we can use different layouts
+        self.gemm_mode = cutlass.gemm.Mode.Batched
+
+        self.operation = operation
+        self.problem_size = problem_size
+
+        # batch size should be greater than 1
+        assert batch > 1, "batch size should be greater than 1, got %d" % batch
+
+        self.batch_count = batch
+
+        assert len(permute_A) == 3, "permute_A should be a list of 3 integers"
+        assert len(permute_B) == 3, "permute_B should be a list of 3 integers"
+
+        self.operation = operation
+        self.layout_A: cutlass.layout = operation.A.layout
+        self.layout_B: cutlass.layout = operation.B.layout
+        self.layout_C: cutlass.layout = operation.C.layout
+
+        self.element_A = operation.A.element
+        self.element_B = operation.B.element
+        self.element_C = operation.C.element
+
+        if (operation.C.layout in 
+            [cutlass.RowMajorInterleaved32, cutlass.ColumnMajorInterleaved32]):
+            raise NotImplementedError("GemmPermute does not support Interleaved layout yet")
+        
+        super(GemmArguments, self).__init__(A, B, C, D, **kwargs)
+
+        if operation.switched:
+            raise NotImplementedError("GemmPermute does not support ColumnMajor output yet")
+
+        ###############################################
+        # we need to classify the type of permutation #
+        ###############################################
+        # First of all, all the permutation results are logically in row-major
+        # this is because pytorch assumes all inputs are in row-major
+        # However, we can use column-major and modifying strides to implement it
+        # For A, the layout is [B, M, K]
+        # 0, 1, 2 : [B, M, K], normal row-major
+        # 0, 2, 1 : [B, K, M], normal column-major
+        # 1, 0, 2 : [M, B, K], row-major with updated stride
+        # 1, 2, 0 : [K, B, M], column-major with updated stride
+
+        if permute_A == [0, 1, 2]:
+            assert self.layout_A == cutlass.RowMajor, "Row-Major layout is required for A[0, 1, 2]"
+            self.lda = operation.A.layout.packed(self.problem_size.mk()).stride()
+            self.batched_stride_A = self.problem_size.m() * self.problem_size.k()
+        elif permute_A == [0, 2, 1]:
+            assert self.layout_A == cutlass.ColumnMajor, "Column-Major layout is required for A[0, 2, 1]"
+            self.lda = operation.A.layout.packed(self.problem_size.mk()).stride()
+            self.batched_stride_A = self.problem_size.m() * self.problem_size.k()
+        elif permute_A == [1, 0, 2]:
+            assert self.layout_A == cutlass.RowMajor, "Row-Major layout is required for A[1, 0, 2]"
+            self.lda = operation.A.layout.packed(cutlass.MatrixCoord(problem_size.m(), batch * problem_size.k())).stride()
+            self.batched_stride_A = problem_size.k()
+        elif permute_A == [1, 2, 0]:
+            assert self.layout_A == cutlass.ColumnMajor, "Column-Major layout is required for A[1, 2, 0]"
+            self.lda = operation.A.layout.packed(cutlass.MatrixCoord(batch * problem_size.m(), problem_size.k())).stride()
+            self.batched_stride_A = problem_size.m()
+        else:
+            # We can skip the two case below for now
+            # 2, 0, 1 : [M, K, B] -> misaligned address
+            # 2, 1, 0 : [K, M, B] -> misaligned address
+            # These two permutations lead to misaligned memory access
+            raise NotImplementedError
+
+        # For B, the layout is [B, K, N]
+        # 0, 1, 2 : [B, K, N], normal row-major
+        # 0, 2, 1 : [B, N, K], normal column-major
+        # 1, 0, 2 : [K, B, N], row-major with updated stride
+        # 1, 2, 0 : [N, B, K], column-major with updated stride
+
+        if permute_B == [0, 1, 2]:
+            assert self.layout_B == cutlass.RowMajor, "Row-Major layout is required for B[0, 1, 2]"
+            self.ldb = operation.B.layout.packed(self.problem_size.kn()).stride()
+            self.batched_stride_B = self.problem_size.k() * self.problem_size.n()
+        elif permute_B == [0, 2, 1]:
+            assert self.layout_B == cutlass.ColumnMajor, "Column-Major layout is required for B[0, 2, 1]"
+            self.ldb = operation.B.layout.packed(self.problem_size.kn()).stride()
+            self.batched_stride_B = self.problem_size.k() * self.problem_size.n()
+        elif permute_B == [1, 0, 2]:
+            assert self.layout_B == cutlass.RowMajor, "Row-Major layout is required for B[1, 0, 2]"
+            self.ldb = operation.B.layout.packed(cutlass.MatrixCoord(problem_size.k(), batch * problem_size.n())).stride()
+            self.batched_stride_B = problem_size.n()
+        elif permute_B == [1, 2, 0]:
+            assert self.layout_B == cutlass.ColumnMajor, "Column-Major layout is required for B[1, 2, 0]"
+            self.ldb = operation.B.layout.packed(cutlass.MatrixCoord(batch * problem_size.k(), problem_size.n())).stride()
+            self.batched_stride_B = problem_size.k()
+        else:
+            # We can skip the two cases below for now
+            # 2, 0, 1 : [K, N, B] -> misaligned address
+            # 2, 1, 0 : [N, K, B] -> misaligned address
+            # These two permutations lead to misaligned memory access
+            raise NotImplementedError
+        
+        self.ldc = operation.C.layout.packed(self.problem_size.mn()).stride()
+        self.ldd = self.ldc
+        self.batched_stride_C = self.problem_size.m() * self.problem_size.n()
+        self.batched_stride_D = self.problem_size.m() * self.problem_size.n()
+
+        if 'output_op' in kwargs.keys():
+            self.output_op = kwargs['output_op']
+        else:
+            self.output_op = self.operation.epilogue_type(1.0, 0.0)
+
+        if isinstance(self.operation, GemmOperationUniversal):
+            self.initialize()
+
+
 class GemmGroupedArguments:
     """
     Argument wrapper for GEMM Grouped. It encodes problem information and 

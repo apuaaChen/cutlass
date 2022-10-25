@@ -40,7 +40,7 @@ import cutlass
 from scipy.special import erf
 
 from pycutlass.c_types import MatrixCoord_
-from pycutlass.frontend import NumpyFrontend
+from pycutlass.frontend import NumpyFrontend, TorchFrontend
 
 from cuda import cuda
 from cuda import cudart
@@ -886,6 +886,55 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpOneHot<
             "element_accumulator": DataTypeTag[self.element_accumulator],
             "element_compute": DataTypeTag[self.element_compute],
             "elements_per_access": str(self.elements_per_access),
+            "visitor_name": self.visitor.instance_name,
+            "visitor": self.visitor.emit(operation)
+        }
+        return SubstituteTemplate(self.Template, values)
+
+
+class DropoutForwardOp:
+    Template = """
+${visitor}
+
+using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpDropoutForward<
+    ${element_accumulator}, ${element_compute}, ${elements_per_access},
+    ${element_mask}, ${visitor_name}>;
+"""
+    counter = 0
+    def __init__(self, element_accumulator, element_compute, 
+        elements_per_access, visitor) -> None:
+        #
+        self.element_accumulator = element_accumulator
+        self.element_compute = element_compute
+        self.elements_per_access = elements_per_access
+        self.visitor = visitor
+
+        self.element_mask = cutlass.int8
+
+        self.instance_name = "DropoutForward%d" % DropoutForwardOp.counter
+        DropoutForwardOp.counter += 1
+
+        class _Arguments(ctypes.Structure):
+            _fields_ = [
+                ("p", ctypes.c_float),
+                ("seed", ctypes.c_uint64),
+                ("offset", ctypes.c_uint64),
+                ("visitor_arg", self.visitor.argument_type)
+            ]
+            def __init__(self, p, seed, offset, visitor_arg) -> None:
+                self.p = p
+                self.seed = seed
+                self.offset = offset
+                self.visitor_arg = visitor_arg
+        
+        self.argument_type = _Arguments
+    def emit(self, operation):
+        values = {
+            "instance_name": self.instance_name,
+            "element_accumulator": DataTypeTag[self.element_accumulator],
+            "element_compute": DataTypeTag[self.element_compute],
+            "elements_per_access": str(self.elements_per_access),
+            "element_mask": DataTypeTag[self.element_mask],
             "visitor_name": self.visitor.instance_name,
             "visitor": self.visitor.emit(operation)
         }

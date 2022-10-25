@@ -138,6 +138,42 @@ class OneHotNode:
     def get_argument(self, visitor_args, kwargs):
         self.argument = self.epilogue_node.argument_type(*visitor_args)
 
+class DropoutForwardNode:
+    cnt = 0
+    # Concept: this is created by the CallOp Node in python ast
+    def __init__(self,
+        element_accumulator, element_compute, elements_per_access,
+        args, node) -> None:
+        #
+        self.op = "dropout_forward"
+        self.tag = "DropoutForward" + str(DropoutForwardNode.cnt)
+        self.id = self.op + str(DropoutForwardNode.cnt)
+        DropoutForwardNode.cnt += 1
+
+        self.type = "tensor"
+
+        # data types
+        self.element_accumulator = element_accumulator
+        self.element_compute = element_compute
+        self.elements_per_access = elements_per_access
+        self.args = args
+    
+    def get_epilogue_node(self, visitors):
+        self.epilogue_node = DropoutForwardOp(
+            self.element_accumulator, self.element_compute,
+            self.elements_per_access, *visitors)
+    
+    def get_argument(self, visitor_args, kwargs):
+        epilogue_ops = []
+        for arg in self.args:
+            try:
+                epilogue_ops.append(kwargs[arg])
+            except:
+                epilogue_ops.append(arg)
+        self.argument = self.epilogue_node.argument_type(
+            *epilogue_ops, *visitor_args
+        )
+
 class BinOpNode:
     cnt = 0
     # Concept: this is created by the BinOp Node in python ast
@@ -410,6 +446,7 @@ class EpilogueAST(ast.NodeVisitor):
         self.stack.pop()
     
     def visit_Call(self, node):
+        print(node.func.id)
         if isinstance(node.func, ast.Name):
             func_type = node.func.id
         elif isinstance(node.func, ast.Attribute):
@@ -418,6 +455,25 @@ class EpilogueAST(ast.NodeVisitor):
             raise TypeError
         if func_type == "reduction_op":
             self.visit(node.args[0])
+        elif func_type == "dropout_forward":
+            arg_list = []
+            print(node.args)
+            for idx, arg in enumerate(node.args):
+                if idx == 0: continue
+                if isinstance(arg, ast.Constant):
+                    arg_list.append(arg.value)
+                elif isinstance(arg, ast.Name):
+                    arg_list.append(arg.id)
+                else:
+                    raise TypeError
+            print(arg_list)
+            dropout_node = DropoutForwardNode(
+                self.element_accumulator, self.element_compute, self.elements_per_access,
+                arg_list, node)
+            self.epilogue_tree.create_node(dropout_node.tag, dropout_node.id, parent=self.stack[-1], data=dropout_node)
+            self.stack.append(dropout_node.id)
+            self.visit(node.args[0])
+            self.stack.pop()
         else:
             arg_list = []
             for idx, arg in enumerate(node.args):
@@ -607,13 +663,19 @@ using ${operation_name}_EpilogueVisitor = cutlass::epilogue::threadblock::Epilog
                         continue
                     # tensor input
                     else:
-                        setattr(self, "buffer_tensor_" + input_key, NumpyFrontend.argument(kwargs[input_key], False))
-                        setattr(self, input_key + "_ptr", int(getattr(self, "buffer_tensor_" + input_key).ptr))
+                        if isinstance(kwargs[input_key], np.ndarray):
+                            setattr(self, "buffer_tensor_" + input_key, NumpyFrontend.argument(kwargs[input_key], False))
+                            setattr(self, input_key + "_ptr", int(getattr(self, "buffer_tensor_" + input_key).ptr))
+                        else:
+                            setattr(self, input_key + "_ptr", int(TorchFrontend.argument(kwargs[input_key])))
                         _kwargs[input_key+"_ptr"] = getattr(self, input_key + "_ptr")
                 # process the return args
                 for ret in function.returns:
-                    setattr(self, "buffer_tensor_" + ret, NumpyFrontend.argument(kwargs[ret], True))
-                    setattr(self, ret + "_ptr", int(getattr(self, "buffer_tensor_" + ret).ptr))
+                    if isinstance(kwargs[ret], np.ndarray):
+                        setattr(self, "buffer_tensor_" + ret, NumpyFrontend.argument(kwargs[ret], True))
+                        setattr(self, ret + "_ptr", int(getattr(self, "buffer_tensor_" + ret).ptr))
+                    else:
+                        setattr(self, ret + "_ptr", int(TorchFrontend.argument(kwargs[ret])))
                     _kwargs[ret+"_ptr"] = getattr(self, ret + "_ptr")
                     setattr(self, "host_tensor_" + ret, kwargs[ret])
                 
