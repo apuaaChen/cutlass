@@ -58,7 +58,7 @@ template <
     typename ElementCompute_,      ///< Data type used to compute dropout
     int      kElementsPerAccess_,  ///< Number of elements computed per operation
     typename OutputTileIterator_,  ///< Tile iterator type to write the tensor
-    typename ElementMask_,         ///< Data type of the output mask
+    typename MaskOutputTileIterator_, ///< Tile iterator type to write the mask
     typename Visitor_              ///< Child Node
 >
 class VisitorOpDropoutForward{
@@ -88,11 +88,9 @@ public:
 
     /// create the mask output iterator
 
-    using ElementMask = ElementMask_;
-    using MaskOutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
-        typename OutputTileIterator_::ThreadMap,
-        ElementMask
-    >;
+    using MaskOutputTileIterator = MaskOutputTileIterator_;
+
+    using ElementMask = typename MaskOutputTileIterator::Element;
 
     /// Fragment type of output mask
     using MaskAccessType =Array<ElementMask, kElementsPerAccess>;
@@ -274,6 +272,44 @@ public:
             NumericArrayConverter<ElementMask, ElementVisit, kElementsPerAccess> mask_converter;
             MaskAccessType &mask_output = reinterpret_cast<MaskAccessType *>(&fragment_T_)[frag_idx];
             mask_output = mask_converter(mask);
+        }
+
+        return output;
+    }
+
+    CUTLASS_DEVICE
+    VisitAccessType visit(
+        int row_idx,
+        int column_idx,
+        AccumulatorAccessType const &accum) {
+
+        /// Get result from visitor
+        VisitAccessTypeVisitor result = visitor_.visit(row_idx, column_idx, accum);
+
+        float4* rand_ptr = reinterpret_cast<float4*>(rand.data());
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int i=0; i < kRandVectorPerVisit; ++i) {
+            *rand_ptr = curand_uniform4(&state);
+            rand_ptr ++;
+        }
+
+        VisitAccessType mask;
+        CUTLASS_PRAGMA_UNROLL
+        for (int i=0; i < kElementsPerAccess; ++i) {
+            mask[i] = ElementCompute(rand[i] < p);
+        }
+
+        /// Type conversion of the dropout mask
+        NumericArrayConverter<ElementCompute, ElementVisit, kElementsPerAccess> src_converter;
+
+        VisitAccessType output = mul_op(mul_op(src_converter(result), mask), scale_);
+
+        bool column_guard = (column_idx < problem_size_.column());
+
+        if (column_guard) {
+            NumericArrayConverter<ElementMask, ElementVisit, kElementsPerAccess> mask_converter;
+            iterator_T_.store(mask_converter(mask));
         }
 
         return output;

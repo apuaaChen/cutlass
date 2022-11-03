@@ -237,3 +237,15 @@ def get_reduction_params(epilogue_functor):
             ("output_op", _EpilogueOutputParams)
         ]
     return _ReductionParams, _EpilogueOutputParams
+
+
+############################################################################################
+# Batch iterator
+############################################################################################
+
+class BatchIteratorArgs(ctypes.Structure):
+    _fields_ = [
+        ("stride", ctypes.c_longlong),
+        ("factor", ctypes.c_float),
+        ("modulo", ctypes.c_int)
+    ]

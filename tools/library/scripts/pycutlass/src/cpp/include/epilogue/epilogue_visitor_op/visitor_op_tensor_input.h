@@ -36,6 +36,7 @@
 
 #pragma once
 #include "cutlass/cutlass.h"
+#include "batch_iterator.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -82,7 +83,7 @@ public:
     struct Arguments {
         ElementInput *input_ptr;                 ///< Pointer to the input tensor in device memory
         int ldt;                                 ///< Leading dimension of the input tensor operand
-        int64_t batch_stride;                        ///< batch stride for batched GEMM
+        typename thread::EpilogueVisitorBatchIterator::Arguments batch_iterator_args;
         
         /// Methods
         CUTLASS_HOST_DEVICE
@@ -91,11 +92,12 @@ public:
         CUTLASS_HOST_DEVICE
         Arguments(
             ElementInput *input_ptr,
-            int ldt, int64_t batch_stride
+            int ldt, 
+            typename thread::EpilogueVisitorBatchIterator::Arguments batch_iterator_args
         ):
             input_ptr(input_ptr),
             ldt(ldt),
-            batch_stride(batch_stride)
+            batch_iterator_args(batch_iterator_args)
         { }
     };
 
@@ -103,7 +105,8 @@ public:
     struct Params {
         typename InputTileIterator::Params params_input;
         ElementInput *input_ptr;
-        int64_t batch_stride;
+        typename thread::EpilogueVisitorBatchIterator::Params batch_iterator_params;
+
 
         /// Method
         CUTLASS_HOST_DEVICE
@@ -114,7 +117,7 @@ public:
         Params(Arguments const &args):
             params_input(args.ldt),
             input_ptr(args.input_ptr),
-            batch_stride(args.batch_stride)
+            batch_iterator_params(args.batch_iterator_args)
         { }
     };
 
@@ -122,7 +125,7 @@ private:
     InputTileIterator iterator_T_;
     typename InputTileIterator::Fragment fragment_T_;
     MatrixCoord problem_size;
-    int64_t batch_stride_;
+    thread::EpilogueVisitorBatchIterator batch_iterator_;
 
 public:
     /// Constructs the function object
@@ -144,11 +147,11 @@ public:
             )
         ),
         problem_size(problem_size),
-        batch_stride_(params.batch_stride) { }
+        batch_iterator_(params.batch_iterator_params) { }
     
     CUTLASS_DEVICE
     void set_batch_index(int batch_idx) {
-        iterator_T_.add_pointer_offset(batch_idx * batch_stride_);
+        iterator_T_.add_pointer_offset(batch_iterator_.batch_offset(batch_idx));
     }
     
     CUTLASS_DEVICE

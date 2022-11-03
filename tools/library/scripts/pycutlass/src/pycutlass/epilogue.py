@@ -39,7 +39,7 @@ from pycutlass import *
 import cutlass
 from scipy.special import erf
 
-from pycutlass.c_types import MatrixCoord_
+from pycutlass.c_types import MatrixCoord_, BatchIteratorArgs
 from pycutlass.frontend import NumpyFrontend, TorchFrontend
 
 from cuda import cuda
@@ -704,6 +704,19 @@ class VectorMult:
     def emit(self):
         return "cutlass::VectorMult"
 
+class VectorDiv:
+    def __init__(self, *args) -> None:
+        class _Arguments(ctypes.Structure):
+            _fields_ = [
+                ("tmp", ctypes.c_int)
+            ]
+            def __init__(self, *args) -> None:
+                self.tmp = 0
+        self.argument_type = _Arguments
+
+    def emit(self):
+        return "cutlass::VectorDiv"
+
 class VectorGeluBackward:
     def __init__(self, *args) -> None:
         class _Arguments(ctypes.Structure):
@@ -789,6 +802,26 @@ class Mult:
     def emit_visitor(self):
         return "cutlass::Mult"
 
+class Div:
+    def __init__(self, element_compute) -> None:
+        class _Arguments(ctypes.Structure):
+            _fields_ = [
+                ("alpha", dtype2ctype[element_compute]),
+                ("alpha_ptr", ctypes.c_void_p)
+            ]
+            def __init__(self, alpha) -> None:
+                if isinstance(alpha, torch.Tensor):
+                    self.alpha = 0.
+                    self.alpha_ptr = int(alpha.data_ptr())
+                else:
+                    self.alpha = element_compute(alpha).storage
+                    self.alpha_ptr = None
+        
+        self.argument_type = _Arguments
+    
+    def emit_visitor(self):
+        return "cutlass::Div"
+
 class Add:
     def __init__(self, element_compute) -> None:
         class _Arguments(ctypes.Structure):
@@ -808,6 +841,26 @@ class Add:
     
     def emit_visitor(self):
         return "cutlass::Add"
+
+class Sub:
+    def __init__(self, element_compute) -> None:
+        class _Arguments(ctypes.Structure):
+            _fields_ = [
+                ("alpha", dtype2ctype[element_compute]),
+                ("alpha_ptr", ctypes.c_void_p)
+            ]
+            def __init__(self, alpha) -> None:
+                if isinstance(alpha, torch.Tensor):
+                    self.alpha = 0.
+                    self.alpha_ptr = int(alpha.data_ptr())
+                else:
+                    self.alpha = element_compute(alpha).storage
+                    self.alpha_ptr = None
+        
+        self.argument_type = _Arguments
+    
+    def emit_visitor(self):
+        return "cutlass::Sub"
 
 class Ne:
     def __init__(self, element_compute) -> None:
@@ -928,11 +981,11 @@ ${visitor}
 
 using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpDropoutForward<
     ${element_accumulator}, ${element_compute}, ${elements_per_access},
-    ${output_tile_iterator}, ${element_mask}, ${visitor_name}>;
+    ${output_tile_iterator}, ${iterator_type}<typename ${output_tile_iterator}::ThreadMap, ${element_mask}>, ${visitor_name}>;
 """
     counter = 0
     def __init__(self, element_accumulator, element_compute, 
-        elements_per_access, visitor) -> None:
+        elements_per_access, visitor, iterator_type="cutlass::epilogue::threadblock::PredicatedTileIterator") -> None:
         #
         self.element_accumulator = element_accumulator
         self.element_compute = element_compute
@@ -943,6 +996,7 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpDropoutForward
 
         self.instance_name = "DropoutForward%d" % DropoutForwardOp.counter
         DropoutForwardOp.counter += 1
+        self.iterator_type = iterator_type
 
         class _Arguments(ctypes.Structure):
             _fields_ = [
@@ -974,6 +1028,7 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpDropoutForward
             "visitor_name": self.visitor.instance_name,
             "visitor": self.visitor.emit(operation),
             "output_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator",
+            "iterator_type": self.iterator_type
         }
         return SubstituteTemplate(self.Template, values)
 
@@ -984,9 +1039,10 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpRowBroadcast<
     ${element_accumulator}, ${element_fragment}, ${input_tile_iterator}>;
 """
     counter = 0
-    def __init__(self, element_accumulator, element_fragment) -> None:
+    def __init__(self, element_accumulator, element_fragment, element_input=None) -> None:
         self.element_accumulator = element_accumulator
         self.element_fragment = element_fragment
+        self.element_input = element_input
 
         self.instance_name = "RowBroadcastOp%d" % RowBroadcastOp.counter
         RowBroadcastOp.counter += 1
@@ -994,11 +1050,11 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpRowBroadcast<
         class _Arguments(ctypes.Structure):
             _fields_ = [
                 ("broadcast_ptr", ctypes.c_void_p),
-                ("batch_stride", ctypes.c_longlong)
+                ("batch_iterator_arg", BatchIteratorArgs)
             ]
-            def __init__(self, broadcast_ptr, batch_stride=0):
+            def __init__(self, broadcast_ptr, batch_stride=0, batch_factor=1., modulo=32768):
                 self.broadcast_ptr = int(broadcast_ptr)
-                self.batch_stride = batch_stride
+                self.batch_iterator_arg = BatchIteratorArgs(batch_stride, batch_factor, modulo)
         
         self.argument_type = _Arguments
     
@@ -1009,7 +1065,11 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpRowBroadcast<
             "element_fragment": DataTypeTag[self.element_fragment],
             "input_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator"
         }
-        return SubstituteTemplate(self.Template, values)
+        operator = SubstituteTemplate(self.Template, values)
+        if self.element_input is None:
+            return operator
+        else:
+            return operator[:-3] + ", " + DataTypeTag[self.element_input] + ">;"
 
 
 class ColumnBroadcastOp:
@@ -1029,11 +1089,11 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpColumnBroadcas
         class _Arguments(ctypes.Structure):
             _fields_ = [
                 ("broadcast_ptr", ctypes.c_void_p),
-                ("batch_stride", ctypes.c_longlong)
+                ("batch_iterator_arg", BatchIteratorArgs)
             ]
-            def __init__(self, broadcast_ptr, batch_stride=0):
+            def __init__(self, broadcast_ptr, batch_stride=0, batch_factor=1., modulo=32768):
                 self.broadcast_ptr = int(broadcast_ptr)
-                self.batch_stride = batch_stride
+                self.batch_iterator_arg = BatchIteratorArgs(batch_stride, batch_factor, modulo)
         
         self.argument_type = _Arguments
     
@@ -1068,12 +1128,12 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpTensorInput<
             _fields_ = [
                 ("input_ptr", ctypes.c_void_p),
                 ("ldt", ctypes.c_int),
-                ("batch_stride", ctypes.c_longlong)
+                ("batch_iterator_arg", BatchIteratorArgs)
             ]
-            def __init__(self, input_ptr, ldt, batch_stride=0) -> None:
+            def __init__(self, input_ptr, ldt, batch_stride=0, batch_factor=1., modulo=32768) -> None:
                 self.input_ptr = int(input_ptr)
                 self.ldt = ldt
-                self.batch_stride = batch_stride
+                self.batch_iterator_arg = BatchIteratorArgs(batch_stride, batch_factor, modulo)
         
         self.argument_type = _Arguments
         self.element_input = element_input

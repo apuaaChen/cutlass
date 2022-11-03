@@ -150,6 +150,8 @@ class DropoutForwardNode:
         self.id = self.op + str(DropoutForwardNode.cnt)
         DropoutForwardNode.cnt += 1
 
+        self.iterator_type = "cutlass::epilogue::threadblock::PredicatedTileIterator"
+
         self.type = "tensor"
 
         # data types
@@ -161,7 +163,7 @@ class DropoutForwardNode:
     def get_epilogue_node(self, visitors):
         self.epilogue_node = DropoutForwardOp(
             self.element_accumulator, self.element_compute,
-            self.elements_per_access, *visitors)
+            self.elements_per_access, *visitors, iterator_type=self.iterator_type)
     
     def get_argument(self, visitor_args, kwargs):
         epilogue_ops = []
@@ -256,26 +258,32 @@ class TensorInputNode(NameNode):
         self.epilogue_node = TensorInputOp(self.element_accumulator, self.element_input)
     
     def get_argument(self, visitor_args, kwargs):
-        self.argument = self.epilogue_node.argument_type(
-            kwargs[self.id + "_ptr"], kwargs["problem_size"][1], 
-            kwargs["problem_size"][0] * kwargs["problem_size"][1])
+        args = [
+            kwargs[self.id + "_ptr"], 
+            kwargs["problem_size"][1], 
+            kwargs["problem_size"][0] * kwargs["problem_size"][1]]
+        self.argument = self.epilogue_node.argument_type(*args)
 
 class RowBroadcastNode(NameNode):
     # Concept: VisitorOpRowBroadcast
-    def __init__(self, element_accumulator, element_fragment, node) -> None:
+    def __init__(self, element_accumulator, element_fragment, node, element_input=None) -> None:
         super().__init__(node)
         #
         self.tag = "RowBroadcast:" + self.tag
         self.type = "tensor"
         self.element_accumulator = element_accumulator
         self.element_fragment = element_fragment
+        self.element_input = element_input
     
     def get_epilogue_node(self, *args):
         self.epilogue_node = RowBroadcastOp(
-            self.element_accumulator, self.element_fragment)
+            self.element_accumulator, self.element_fragment, self.element_input)
     
     def get_argument(self, visitor_args, kwargs):
-        self.argument = self.epilogue_node.argument_type(kwargs[self.id + "_ptr"], kwargs["problem_size"][1])
+        args = [
+            kwargs[self.id + "_ptr"], kwargs["problem_size"][1]
+        ]
+        self.argument = self.epilogue_node.argument_type(*args)
 
 class ColumnBroadcastNode(NameNode):
     # Concept: VisitorOpColumnBroadcast
@@ -292,7 +300,10 @@ class ColumnBroadcastNode(NameNode):
             self.element_accumulator, self.element_fragment, self.element_input)
     
     def get_argument(self, visitor_args, kwargs):
-        self.argument = self.epilogue_node.argument_type(kwargs[self.id + "_ptr"], kwargs["problem_size"][0])
+        args = [
+            kwargs[self.id + "_ptr"], kwargs["problem_size"][0]
+        ]
+        self.argument = self.epilogue_node.argument_type(*args)
 
 class TensorOutputNode(NameNode):
     # Concept: VisitorOpTensorOutput

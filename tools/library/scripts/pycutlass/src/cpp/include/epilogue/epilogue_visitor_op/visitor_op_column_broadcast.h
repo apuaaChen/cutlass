@@ -36,6 +36,7 @@
 
 #pragma once
 #include "cutlass/cutlass.h"
+#include "batch_iterator.h"
 #include "stdio.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -113,7 +114,7 @@ public:
     /// Host-constructable Argument structure
     struct Arguments {
         ElementVector *broadcast_ptr;      ///< Pointer to the additional tensor operand
-        int64_t batch_stride;
+        typename thread::EpilogueVisitorBatchIterator::Arguments batch_iterator_args;
 
         /// Methods
         CUTLASS_HOST_DEVICE
@@ -123,16 +124,16 @@ public:
         CUTLASS_HOST_DEVICE
         Arguments(
             ElementVector *broadcast_ptr,
-            int64_t batch_stride
+            typename thread::EpilogueVisitorBatchIterator::Arguments batch_iterator_args
         ):
             broadcast_ptr(broadcast_ptr),
-            batch_stride(batch_stride) { }
+            batch_iterator_args(batch_iterator_args) { }
     };
 
     /// Param structure
     struct Params {
         ElementVector *broadcast_ptr;      ///< Pointer to the additional tensor operand
-        int64_t batch_stride;
+        typename thread::EpilogueVisitorBatchIterator::Params batch_iterator_params;
 
         /// Method
         CUTLASS_HOST_DEVICE
@@ -142,7 +143,7 @@ public:
         CUTLASS_HOST_DEVICE
         Params(Arguments const &args):
             broadcast_ptr(args.broadcast_ptr),
-            batch_stride(args.batch_stride) { }
+            batch_iterator_params(args.batch_iterator_args) { }
     };
 
 private:
@@ -156,7 +157,7 @@ private:
     int state_[3];
     int thread_offset_row_;
 
-    int64_t batch_stride_;
+    thread::EpilogueVisitorBatchIterator batch_iterator_;
 
     ElementFragment broadcast_data;
 
@@ -175,14 +176,14 @@ public:
         thread_idx_(thread_idx),
         problem_size(problem_size),
         thread_start_row_(ThreadMap::initial_offset(thread_idx).row() + threadblock_offset.row()),
-        batch_stride_(params.batch_stride)
+        batch_iterator_(params.batch_iterator_params)
     {
         state_[0] = state_[1] = state_[2] = 0;
     }
 
     CUTLASS_DEVICE
     void set_batch_index(int batch_idx) {
-        broadcast_ptr += batch_idx * batch_stride_;
+        broadcast_ptr += batch_iterator_.batch_offset(batch_idx);
     }
     
     CUTLASS_DEVICE

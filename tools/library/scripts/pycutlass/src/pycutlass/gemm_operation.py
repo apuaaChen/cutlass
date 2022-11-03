@@ -1219,6 +1219,7 @@ using ${operation_name}_default =
     ${math_operation}
 >::GemmKernel;
 
+// debug4
 ${epilogue_visitor}
 
 using ${operation_name}_Epilogue = typename cutlass::epilogue::threadblock::EpilogueWithVisitorFromExistingEpilogue<

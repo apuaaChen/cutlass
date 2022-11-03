@@ -146,6 +146,40 @@ struct VectorMult {
 };
 
 
+/// vector divide
+template <typename T, int N>
+struct VectorDiv {
+
+    struct Arguments {
+        int tmp;
+
+        CUTLASS_HOST_DEVICE
+        Arguments():tmp(0){ }
+
+        CUTLASS_HOST_DEVICE
+        Arguments(int tmp): tmp(tmp) { }
+    };
+    
+    struct Params {
+
+        CUTLASS_HOST_DEVICE
+        Params(Arguments const &args) { }
+    };
+
+    CUTLASS_HOST_DEVICE
+    VectorDiv(
+        Params const &params
+    ) { }
+
+    CUTLASS_HOST_DEVICE
+    Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
+        cutlass::divides<Array<T, N>> div_op;
+        return div_op(lhs, rhs);
+    }
+
+};
+
+
 /// GeLU: tanh approximation
 // https://github.com/pytorch/pytorch/blob/d321be61c07bc1201c7fe10cd03d045277a326c1/aten/src/ATen/native/cuda/ActivationGeluKernel.cu
 template <typename T, int N>

@@ -36,6 +36,7 @@
 
 #pragma once
 #include "cutlass/cutlass.h"
+#include "batch_iterator.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -52,7 +53,8 @@ namespace threadblock {
 template <
     typename ElementAccumulator_,    ///< Data type of the Accumulator
     typename ElementFragment_,       ///< Data type used to cache vector in register
-    typename InputTileIterator_      ///< Tile iterator type to read the broadcasted tensor
+    typename InputTileIterator_,     ///< Tile iterator type to read the broadcasted tensor
+    typename ElementInput_ = typename InputTileIterator_::Element  /// input data
 >
 class VisitorOpRowBroadcast {
 public:
@@ -60,7 +62,7 @@ public:
 
     static int const kElementsPerAccess = InputTileIterator::kElementsPerAccess;
     using ElementAccumulator = ElementAccumulator_;
-    using ElementVector = typename InputTileIterator::Element;
+    using ElementVector = ElementInput_;
     using ElementFragment = ElementFragment_;
 
     using VisitAccessType = Array<ElementFragment, kElementsPerAccess>;
@@ -112,7 +114,7 @@ public:
     /// Host-constructable Argument structure
     struct Arguments {
         ElementVector *broadcast_ptr;      ///< Pointer to the additional tensor operand
-        int64_t batch_stride;
+        typename thread::EpilogueVisitorBatchIterator::Arguments batch_iterator_args;
 
         /// Methods
         CUTLASS_HOST_DEVICE
@@ -122,16 +124,16 @@ public:
         CUTLASS_HOST_DEVICE
         Arguments(
             ElementVector *broadcast_ptr,
-            int64_t batch_stride
+            typename thread::EpilogueVisitorBatchIterator::Arguments batch_iterator_args
         ):
             broadcast_ptr(broadcast_ptr),
-            batch_stride(batch_stride) { }
+            batch_iterator_args(batch_iterator_args) { }
     };
 
     /// Param structure
     struct Params {
         ElementVector *broadcast_ptr;      ///< Pointer to the additional tensor operand
-        int64_t batch_stride;
+        typename thread::EpilogueVisitorBatchIterator::Params batch_iterator_params;
 
         /// Method
         CUTLASS_HOST_DEVICE
@@ -141,7 +143,7 @@ public:
         CUTLASS_HOST_DEVICE
         Params(Arguments const &args):
             broadcast_ptr(args.broadcast_ptr),
-            batch_stride(args.batch_stride) { }
+            batch_iterator_params(args.batch_iterator_args) { }
     };
 
 private:
@@ -150,7 +152,7 @@ private:
     MatrixCoord threadblock_offset_;
     int thread_idx_;
     MatrixCoord problem_size;
-    int64_t batch_stride_;
+    thread::EpilogueVisitorBatchIterator batch_iterator_;
 
 public:
     /// Constructs the function object
@@ -166,11 +168,11 @@ public:
         threadblock_offset_(threadblock_offset),
         thread_idx_(thread_idx),
         problem_size(problem_size),
-        batch_stride_(params.batch_stride) { }
+        batch_iterator_(params.batch_iterator_params) { }
     
     CUTLASS_DEVICE
     void set_batch_index(int batch_idx) {
-        broadcast_ptr += batch_idx * batch_stride_;
+        broadcast_ptr += batch_iterator_.batch_offset(batch_idx);
     }
     
     CUTLASS_DEVICE
