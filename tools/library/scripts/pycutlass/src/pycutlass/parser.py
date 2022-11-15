@@ -317,7 +317,28 @@ class TensorOutputNode(NameNode):
         self.epilogue_node = TensorOutputOp(self.element_accumulator, *visitors)
     
     def get_argument(self, visitor_args, kwargs):
-        self.argument = self.epilogue_node.argument_type(kwargs[self.id + "_ptr"], kwargs["problem_size"][1], *visitor_args, kwargs["problem_size"][0] * kwargs["problem_size"][1])
+        if (self.id + "_permute") in kwargs.keys():
+            try:
+                batch_size = kwargs["batch_size"]
+            except:
+                raise ValueError("batch size should be included in keyword args")
+
+            permute = kwargs[self.id + "_permute"]
+            # case 1: [0, 1, 2] -> [B, M, N]
+            if permute == [0, 1, 2]:
+                ldt = kwargs["problem_size"][1]
+                batch_stride = kwargs["problem_size"][0] * kwargs["problem_size"][1]
+            # case 2: [1, 0, 2] -> [M, B, N]
+            elif permute == [1, 0, 2]:
+                ldt = kwargs["problem_size"][1] * batch_size
+                batch_stride = kwargs["problem_size"][1]
+            else:
+                raise NotImplementedError("Unsupported output permutation")
+        else:
+            ldt = kwargs["problem_size"][1]
+            batch_stride = kwargs["problem_size"][0] * kwargs["problem_size"][1]
+
+        self.argument = self.epilogue_node.argument_type(kwargs[self.id + "_ptr"], ldt, *visitor_args, batch_stride)
 
 class RowReductionNode:
     # Concept: RowReductionOp

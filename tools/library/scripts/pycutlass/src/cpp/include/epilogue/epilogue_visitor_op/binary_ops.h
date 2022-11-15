@@ -257,6 +257,53 @@ struct VectorGeluBackward {
     }
 };
 
+
+/// Tanh backward kernel
+// https://github.com/pytorch/pytorch/blob/c371542efc31b1abfe6f388042aa3ab0cef935f2/caffe2/operators/tanh_op.cu
+template <typename T, int N>
+struct VectorTanhBackward {
+    /// Argument
+    struct Arguments {
+        // a placeholder argument to ensure correctness of ctypes
+        int tmp;
+
+        CUTLASS_HOST_DEVICE
+        Arguments(): tmp(0) { };
+
+        CUTLASS_HOST_DEVICE
+        Arguments(int tmp): tmp(tmp) { };
+    };
+
+    /// Param
+    struct Params {
+        CUTLASS_HOST_DEVICE
+        Params(){ };
+        Params(Arguments const &args) { }
+    };
+
+    /// Constructor
+    CUTLASS_HOST_DEVICE
+    VectorTanhBackward(Params const &params) { }
+
+    // scalar operator
+    CUTLASS_HOST_DEVICE
+    T tanh_backward_op(T const &dy, T const &x) const {
+        return dy * (T(1) - x * x);
+    }
+
+    CUTLASS_HOST_DEVICE
+    Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
+        Array<T, N> grad_out;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int i=0; i < N; ++i) {
+            grad_out[i] = tanh_backward_op(lhs[i], rhs[i]);
+        }
+
+        return grad_out;
+    }
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass

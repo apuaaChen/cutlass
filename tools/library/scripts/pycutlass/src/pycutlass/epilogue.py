@@ -729,6 +729,20 @@ class VectorGeluBackward:
     
     def emit(self):
         return "cutlass::VectorGeluBackward"
+
+
+class VectorTanhBackward:
+    def __init__(self, *args) -> None:
+        class _Arguments(ctypes.Structure):
+            _fields_ = [
+                ("tmp", ctypes.c_int)
+            ]
+            def __init__(self, *args) -> None:
+                self.tmp = 0
+        self.argument_type = _Arguments
+    
+    def emit(self):
+        return "cutlass::VectorTanhBackward"
         
 
 class BinaryOp:

@@ -360,7 +360,7 @@ class BatchedGemmPermutedArguments(GemmArguments):
         self.gemm_mode = cutlass.gemm.Mode.Batched
 
         self.operation = operation
-        self.problem_size = problem_size
+        # self.problem_size = problem_size
 
         # batch size should be greater than 1
         assert batch > 1, "batch size should be greater than 1, got %d" % batch
@@ -386,7 +386,27 @@ class BatchedGemmPermutedArguments(GemmArguments):
         super(GemmArguments, self).__init__(A, B, C, D, **kwargs)
 
         if operation.switched:
-            raise NotImplementedError("GemmPermute does not support ColumnMajor output yet")
+            self.problem_size = cutlass.gemm.GemmCoord(
+                problem_size.n(), problem_size.m(), problem_size.k())
+            self.ptr_A, self.ptr_B = self.ptr_B, self.ptr_A
+            if permute_A == [0, 1, 2]: permute_A = [0, 2, 1]
+            elif permute_A == [0, 2, 1]: permute_A = [0, 1, 2]
+            elif permute_A == [1, 0, 2]: permute_A = [1, 2, 0]
+            elif permute_A == [1, 2, 0]: permute_A = [1, 0, 2]
+            else:
+                raise NotImplementedError()
+            
+            if permute_B == [0, 1, 2]: permute_B = [0, 2, 1]
+            elif permute_B == [0, 2, 1]: permute_B = [0, 1, 2]
+            elif permute_B == [1, 0, 2]: permute_B = [1, 2, 0]
+            elif permute_B == [1, 2, 0]: permute_B = [1, 0, 2]
+            else:
+                raise NotImplementedError()
+            
+            permute_A, permute_B = permute_B, permute_A
+        else:
+            self.problem_size = problem_size
+            # raise NotImplementedError("GemmPermute does not support ColumnMajor output yet")
 
         ###############################################
         # we need to classify the type of permutation #
@@ -410,12 +430,12 @@ class BatchedGemmPermutedArguments(GemmArguments):
             self.batched_stride_A = self.problem_size.m() * self.problem_size.k()
         elif permute_A == [1, 0, 2]:
             assert self.layout_A == cutlass.RowMajor, "Row-Major layout is required for A[1, 0, 2]"
-            self.lda = operation.A.layout.packed(cutlass.MatrixCoord(problem_size.m(), batch * problem_size.k())).stride()
-            self.batched_stride_A = problem_size.k()
+            self.lda = operation.A.layout.packed(cutlass.MatrixCoord(self.problem_size.m(), batch * self.problem_size.k())).stride()
+            self.batched_stride_A = self.problem_size.k()
         elif permute_A == [1, 2, 0]:
             assert self.layout_A == cutlass.ColumnMajor, "Column-Major layout is required for A[1, 2, 0]"
-            self.lda = operation.A.layout.packed(cutlass.MatrixCoord(batch * problem_size.m(), problem_size.k())).stride()
-            self.batched_stride_A = problem_size.m()
+            self.lda = operation.A.layout.packed(cutlass.MatrixCoord(batch * self.problem_size.m(), self.problem_size.k())).stride()
+            self.batched_stride_A = self.problem_size.m()
         else:
             # We can skip the two case below for now
             # 2, 0, 1 : [M, K, B] -> misaligned address
@@ -439,12 +459,12 @@ class BatchedGemmPermutedArguments(GemmArguments):
             self.batched_stride_B = self.problem_size.k() * self.problem_size.n()
         elif permute_B == [1, 0, 2]:
             assert self.layout_B == cutlass.RowMajor, "Row-Major layout is required for B[1, 0, 2]"
-            self.ldb = operation.B.layout.packed(cutlass.MatrixCoord(problem_size.k(), batch * problem_size.n())).stride()
-            self.batched_stride_B = problem_size.n()
+            self.ldb = operation.B.layout.packed(cutlass.MatrixCoord(self.problem_size.k(), batch * self.problem_size.n())).stride()
+            self.batched_stride_B = self.problem_size.n()
         elif permute_B == [1, 2, 0]:
             assert self.layout_B == cutlass.ColumnMajor, "Column-Major layout is required for B[1, 2, 0]"
-            self.ldb = operation.B.layout.packed(cutlass.MatrixCoord(batch * problem_size.k(), problem_size.n())).stride()
-            self.batched_stride_B = problem_size.k()
+            self.ldb = operation.B.layout.packed(cutlass.MatrixCoord(batch * self.problem_size.k(), self.problem_size.n())).stride()
+            self.batched_stride_B = self.problem_size.k()
         else:
             # We can skip the two cases below for now
             # 2, 0, 1 : [K, N, B] -> misaligned address
