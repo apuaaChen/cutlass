@@ -343,7 +343,7 @@ class TensorOutputNode(NameNode):
 class RowReductionNode:
     # Concept: RowReductionOp
     def __init__(self, element_accumulator, element_reduction,
-        element_reduction_accumulator, id, factor) -> None:
+        element_reduction_accumulator, id, factor, atomic=False) -> None:
         #
         self.id = id
         self.tag = "RowReduction:" + self.id
@@ -352,14 +352,18 @@ class RowReductionNode:
         self.element_reduction = element_reduction
         self.element_reduction_accumulator = element_reduction_accumulator
         self.factor = factor
+        self.atomic = atomic
     
     def get_epilogue_node(self, visitors):
         self.epilogue_node = RowReductionOp(
             self.element_accumulator, self.element_reduction, 
-            self.element_reduction_accumulator, *visitors)
+            self.element_reduction_accumulator, *visitors, atomic=self.atomic)
     
     def get_batch_stride(self, problem_size):
-        return problem_size[0] * ((problem_size[1] + self.factor - 1) // self.factor)
+        if self.atomic:
+            return problem_size[0]
+        else:
+            return problem_size[0] * ((problem_size[1] + self.factor - 1) // self.factor)
     
     def get_argument(self, visitor_args, kwargs):
         self.argument = self.epilogue_node.argument_type(kwargs[self.id + "_ptr"], *visitor_args, self.get_batch_stride(kwargs["problem_size"]))
@@ -367,7 +371,7 @@ class RowReductionNode:
 class ColumnReductionNode:
     # Concept: ColumnReductionOp
     def __init__(self, element_accumulator, element_reduction,
-        element_reduction_accumulator, id, factor) -> None:
+        element_reduction_accumulator, id, factor, atomic=False) -> None:
         #
         self.id = id
         self.tag = "ColumnReduction:" + self.id
@@ -376,14 +380,18 @@ class ColumnReductionNode:
         self.element_reduction = element_reduction
         self.element_reduction_accumulator = element_reduction_accumulator
         self.factor = factor
+        self.atomic = atomic
     
     def get_epilogue_node(self, visitors):
         self.epilogue_node = ColumnReductionOp(
             self.element_accumulator, self.element_reduction, 
-            self.element_reduction_accumulator, *visitors)
+            self.element_reduction_accumulator, *visitors, atomic=self.atomic)
     
     def get_batch_stride(self, problem_size):
-        return problem_size[1] * ((problem_size[0] + self.factor - 1) // self.factor)
+        if self.atomic:
+            return problem_size[1]
+        else:
+            return problem_size[1] * ((problem_size[0] + self.factor - 1) // self.factor)
     
     def get_argument(self, visitor_args, kwargs):
         self.argument = self.epilogue_node.argument_type(kwargs[self.id + '_ptr'], *visitor_args, self.get_batch_stride(kwargs["problem_size"]))

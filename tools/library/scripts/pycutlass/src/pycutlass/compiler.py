@@ -143,7 +143,7 @@ class ArtifactManager:
     def nvcc(self):
         self.backend = "nvcc"
         self.default_compile_options = [
-            '-std=c++11',
+            '-std=c++11', '-use_fast_math'
         ]
     def insert_operation(self, op_key, cubin, hostfile, op_name, op_attrs):
         connection = sqlite3.connect("./compiled_cache.db")

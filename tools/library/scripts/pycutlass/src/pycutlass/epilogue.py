@@ -1208,18 +1208,19 @@ class ColumnReductionOp:
     Template = """
 ${visitor}
 
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpColumnReduction<
+using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpColumnReduction${atomic}<
     cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
     ${element_accumulator}, ${element_reduction}, ${element_reduction_accumulator},
     ${output_tile_iterator}, ${visitor_name}>;
 """
     counter = 0
     def __init__(self, element_accumulator, element_reduction, 
-        element_reduction_accumulator, visitor) -> None:
+        element_reduction_accumulator, visitor, atomic=False) -> None:
         self.element_accumulator = element_accumulator
         self.element_reduction = element_reduction
         self.element_reduction_accumulator = element_reduction_accumulator
         self.visitor = visitor
+        self.atomic = "Atomic" if atomic else ""
 
         self.instance_name = "ColumnReductionOp%d" % ColumnReductionOp.counter
         ColumnReductionOp.counter += 1
@@ -1227,12 +1228,12 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpColumnReductio
         class _Arguments(ctypes.Structure):
             _fields_ = [
                 ("reduction_ptr", ctypes.c_void_p),
-                ("batch_stride", ctypes.c_longlong),
+                ("batch_iterator_arg", BatchIteratorArgs),
                 ("visitor_arg", self.visitor.argument_type)
             ]
-            def __init__(self, reduction_ptr, visitor_arg, batch_stride=0) -> None:
+            def __init__(self, reduction_ptr, visitor_arg, batch_stride=0, batch_factor=1., modulo=32768) -> None:
                 self.reduction_ptr = reduction_ptr
-                self.batch_stride = batch_stride
+                self.batch_iterator_arg = BatchIteratorArgs(batch_stride, batch_factor, modulo)
                 self.visitor_arg = visitor_arg
         
         self.argument_type = _Arguments
@@ -1248,7 +1249,8 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpColumnReductio
             "element_reduction_accumulator": DataTypeTag[self.element_reduction_accumulator],
             "output_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator",
             "visitor_name": self.visitor.instance_name,
-            "visitor": self.visitor.emit(operation)
+            "visitor": self.visitor.emit(operation),
+            "atomic": self.atomic
         }
         return SubstituteTemplate(self.Template, values)
 
@@ -1257,18 +1259,19 @@ class RowReductionOp:
     Template = """
 ${visitor}
 
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpRowReduction<
+using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpRowReduction${atomic}<
     cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
     ${element_accumulator}, ${element_reduction}, ${element_reduction_accumulator},
     ${output_tile_iterator}, ${visitor_name}>;
 """
     counter = 0
     def __init__(self, element_accumulator, element_reduction, 
-        element_reduction_accumulator, visitor) -> None:
+        element_reduction_accumulator, visitor, atomic=False) -> None:
         self.element_accumulator = element_accumulator
         self.element_reduction = element_reduction
         self.element_reduction_accumulator = element_reduction_accumulator
         self.visitor = visitor
+        self.atomic = "Atomic" if atomic else ""
 
         self.instance_name = "RowReductionOp%d" % RowReductionOp.counter
         RowReductionOp.counter += 1
@@ -1276,13 +1279,13 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpRowReduction<
         class _Arguments(ctypes.Structure):
             _fields_ = [
                 ("reduction_ptr", ctypes.c_void_p),
-                ("batch_stride", ctypes.c_longlong),
+                ("batch_iterator_arg", BatchIteratorArgs),
                 ("visitor_arg", self.visitor.argument_type)
             ]
-            def __init__(self, reduction_ptr, visitor_arg, batch_stride=0) -> None:
+            def __init__(self, reduction_ptr, visitor_arg, batch_stride=0, batch_factor=1., modulo=32768) -> None:
                 self.reduction_ptr = reduction_ptr
                 self.visitor_arg = visitor_arg
-                self.batch_stride = batch_stride
+                self.batch_iterator_arg = BatchIteratorArgs(batch_stride, batch_factor, modulo)
         
         self.argument_type = _Arguments
     
@@ -1297,6 +1300,7 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpRowReduction<
             "element_reduction_accumulator": DataTypeTag[self.element_reduction_accumulator],
             "output_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator",
             "visitor_name": self.visitor.instance_name,
-            "visitor": self.visitor.emit(operation)
+            "visitor": self.visitor.emit(operation),
+            "atomic": self.atomic
         }
         return SubstituteTemplate(self.Template, values)

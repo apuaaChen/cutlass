@@ -209,7 +209,7 @@ public:
         scale_(1.0 / params.p)
     {
         /// unsigned long long seed, unsigned long long subsequence, unsigned long long offset, curandStatePhilox4_32_10_t
-        curand_init(params.seed, uint64_t(thread_idx), params.offset, &state);
+        curand_init(params.seed + params.offset, uint64_t(thread_idx), 0, &state);
     }
 
     CUTLASS_DEVICE
