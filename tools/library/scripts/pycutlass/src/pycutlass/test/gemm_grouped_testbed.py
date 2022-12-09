@@ -107,8 +107,8 @@ class TestbedGrouped:
 
     def run(self, problem_count: int, alpha: float = 1.0, beta: float = 0.0) -> bool:
 
-        assert get_allocated_size(
-        ) == 0, "%d byte of pool memory is not released in previous run" % get_allocated_size()
+        assert pycutlass.memory_pool.get_allocated_size(
+        ) == 0, "%d byte of pool memory is not released in previous run" % pycutlass.memory_pool.get_allocated_size()
 
         # initialize
         np.random.seed(self.seed)
@@ -229,7 +229,7 @@ class TestbedGrouped:
 
         del arguments
 
-        assert get_allocated_size(
-        ) == 0, "%d byte of pool memory is not released after current run" % get_allocated_size()
+        assert pycutlass.memory_pool.get_allocated_size(
+        ) == 0, "%d byte of pool memory is not released after current run" % pycutlass.memory_pool.get_allocated_size()
 
         return passed

@@ -44,31 +44,24 @@ class PoolMemoryManager:
         self.mr = rmm.mr.TrackingResourceAdaptor(self.pool)
         rmm.mr.set_current_device_resource(self.mr)
 
-    def get_allocated_size(self):
-        return self.mr.get_allocated_bytes()
-
     def pool_size(self):
         return self.pool.pool_size()
+    
+    def todevice(self, host_data, dtype=np.float32):
+        """
+        Pass the host_data to device memory
+        """
+        if isinstance(host_data, list):
+            return rmm.DeviceBuffer.to_device(np.array(host_data, dtype=dtype).tobytes())
+        elif isinstance(host_data, np.ndarray):
+            return rmm.DeviceBuffer.to_device(host_data.tobytes())
 
+    def device_mem_alloc(self, size):
+        return rmm.DeviceBuffer(size=size)
 
-def todevice(host_data, dtype=np.float32):
-    """
-    Pass the host_data to device memory
-    """
-    if isinstance(host_data, list):
-        return rmm.DeviceBuffer.to_device(np.array(host_data, dtype=dtype).tobytes())
-    elif isinstance(host_data, np.ndarray):
-        return rmm.DeviceBuffer.to_device(host_data.tobytes())
+    def get_allocated_size(self):
+        device_resource = rmm.mr.get_current_device_resource()
+        return device_resource.get_allocated_bytes()
 
-
-def device_mem_alloc(size):
-    return rmm.DeviceBuffer(size=size)
-
-
-def align_size(size, alignment=256):
+def align_size(self, size, alignment=256):
     return ((size + alignment - 1) // alignment) * alignment
-
-
-def get_allocated_size():
-    device_resource = rmm.mr.get_current_device_resource()
-    return device_resource.get_allocated_bytes()

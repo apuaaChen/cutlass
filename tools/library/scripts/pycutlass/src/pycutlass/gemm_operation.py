@@ -35,6 +35,7 @@ import copy
 import numpy as np
 from typeguard import typechecked
 import cutlass
+import pycutlass
 from pycutlass import *
 from cuda import cuda
 
@@ -188,10 +189,10 @@ class GemmArguments(ArgumentBase):
                 ptr_C_addr += stride_C
                 ptr_D_addr += stride_D
             
-            self.ptr_A_array_buffer = todevice(self.ptr_A_array, dtype=np.int64)
-            self.ptr_B_array_buffer = todevice(self.ptr_B_array, dtype=np.int64)
-            self.ptr_C_array_buffer = todevice(self.ptr_C_array, dtype=np.int64)
-            self.ptr_D_array_buffer = todevice(self.ptr_D_array, dtype=np.int64)
+            self.ptr_A_array_buffer = pycutlass.memory_pool.todevice(self.ptr_A_array, dtype=np.int64)
+            self.ptr_B_array_buffer = pycutlass.memory_pool.todevice(self.ptr_B_array, dtype=np.int64)
+            self.ptr_C_array_buffer = pycutlass.memory_pool.todevice(self.ptr_C_array, dtype=np.int64)
+            self.ptr_D_array_buffer = pycutlass.memory_pool.todevice(self.ptr_D_array, dtype=np.int64)
 
         if isinstance(self.operation, GemmOperationUniversal):
             self.initialize()
@@ -277,7 +278,7 @@ class GemmArguments(ArgumentBase):
             self.operation.rt_module.get_device_workspace_size(self)
 
         if device_workspace_size > 0:
-            self.workspace_buffer = device_mem_alloc(device_workspace_size)
+            self.workspace_buffer = pycutlass.memory_pool.device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
             err, = cuda.cuMemsetD32(
                 workspace_ptr, 0, device_workspace_size // 4)
@@ -588,16 +589,16 @@ class GemmGroupedArguments:
             )
             self.total_tiles += grid.x * grid.y * grid.z
 
-        self.problem_size_buffer = todevice(problem_size_host, np.int32)
-        self.ptr_A_buffer = todevice(self.ptr_A_host, np.int64)
-        self.ptr_B_buffer = todevice(self.ptr_B_host, np.int64)
-        self.ptr_C_buffer = todevice(self.ptr_C_host, np.int64)
-        self.ptr_D_buffer = todevice(self.ptr_D_host, np.int64)
+        self.problem_size_buffer = pycutlass.memory_pool.todevice(problem_size_host, np.int32)
+        self.ptr_A_buffer = pycutlass.memory_pool.todevice(self.ptr_A_host, np.int64)
+        self.ptr_B_buffer = pycutlass.memory_pool.todevice(self.ptr_B_host, np.int64)
+        self.ptr_C_buffer = pycutlass.memory_pool.todevice(self.ptr_C_host, np.int64)
+        self.ptr_D_buffer = pycutlass.memory_pool.todevice(self.ptr_D_host, np.int64)
 
-        self.lda_buffer = todevice(lda_host, np.int64)
-        self.ldb_buffer = todevice(ldb_host, np.int64)
-        self.ldc_buffer = todevice(ldc_host, np.int64)
-        self.ldd_buffer = todevice(ldd_host, np.int64)
+        self.lda_buffer = pycutlass.memory_pool.todevice(lda_host, np.int64)
+        self.ldb_buffer = pycutlass.memory_pool.todevice(ldb_host, np.int64)
+        self.ldc_buffer = pycutlass.memory_pool.todevice(ldc_host, np.int64)
+        self.ldd_buffer = pycutlass.memory_pool.todevice(ldd_host, np.int64)
 
         if 'output_op' in kwargs.keys():
             self.alpha = kwargs['output_op'].alpha
@@ -638,7 +639,7 @@ class GemmGroupedArguments:
             self.operation.rt_module.get_device_workspace_size(self)
 
         if device_workspace_size > 0:
-            self.workspace_buffer = device_mem_alloc(device_workspace_size)
+            self.workspace_buffer = pycutlass.memory_pool.device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
             err, = cuda.cuMemsetD32(
                 workspace_ptr, 0, device_workspace_size // 4)

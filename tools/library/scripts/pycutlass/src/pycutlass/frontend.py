@@ -32,7 +32,7 @@
 
 import numpy as np
 from cuda import cuda
-from pycutlass.memory_manager import *
+import pycutlass
 from typing import TYPE_CHECKING
 try:
     import torch
@@ -67,9 +67,9 @@ class NumpyFrontend:
         """
         # copy the data to device
         if is_output:
-            return device_mem_alloc(np_tensor.size * np_tensor.itemsize)
+            return pycutlass.memory_pool.device_mem_alloc(np_tensor.size * np_tensor.itemsize)
         else:
-            return todevice(np_tensor)
+            return pycutlass.memory_pool.todevice(np_tensor)
 
 
 class TorchFrontend:

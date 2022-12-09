@@ -417,7 +417,7 @@ class Conv2dLauncher:
     def run(self, problem_size, split_k_mode=cutlass.conv.SplitKMode.Serial,
         alpha=1.0, beta=0.0):
 
-        assert get_allocated_size() == 0, "%d byte of pool memory is not released in previous run" % get_allocated_size()
+        assert pycutlass.memory_pool.get_allocated_size() == 0, "%d byte of pool memory is not released in previous run" % pycutlass.memory_pool.get_allocated_size()
 
         #
         # Initialize input and output tensors
@@ -497,7 +497,7 @@ class Conv2dLauncher:
         if split_k_mode == cutlass.conv.SplitKMode.Parallel:
             del reduction_arguments
         
-        assert get_allocated_size() == 0, "%d byte of pool memory is not released after current run" % get_allocated_size()
+        assert pycutlass.memory_pool.get_allocated_size() == 0, "%d byte of pool memory is not released after current run" % pycutlass.memory_pool.get_allocated_size()
         if self.profiling:
             return runtime
         return passed

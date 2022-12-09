@@ -16,7 +16,7 @@ pycutlass.get_memory_pool({init_pool_size_in_bytes}, {max_pool_size_in_bytes})
 ```
 We also provide functions to query the allocated size.
 ```python
-bytes = get_allocated_size()
+bytes = pycutlass.memory_pool.get_allocated_size()
 ```
 
 

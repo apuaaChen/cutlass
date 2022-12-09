@@ -370,8 +370,8 @@ class GemmUniversalLauncher:
 
     def run(self, mode, problem_size, batch_count=1, alpha=1.0, beta=0.0):
 
-        assert get_allocated_size(
-        ) == 0, "%d byte of pool memory is not released in previous run" % get_allocated_size()
+        assert pycutlass.memory_pool.get_allocated_size(
+        ) == 0, "%d byte of pool memory is not released in previous run" % pycutlass.memory_pool.pycutlass.memory_pool.get_allocated_size()
 
         np.random.seed(self.seed)
 
@@ -448,8 +448,8 @@ class GemmUniversalLauncher:
         if mode == cutlass.gemm.Mode.GemmSplitKParallel:
             del reduction_arguments
 
-        assert get_allocated_size(
-        ) == 0, "%d byte of pool memory is not released after current run" % get_allocated_size()
+        assert pycutlass.memory_pool.get_allocated_size(
+        ) == 0, "%d byte of pool memory is not released after current run" % pycutlass.memory_pool.get_allocated_size()
 
         if self.profiling:
             return runtime

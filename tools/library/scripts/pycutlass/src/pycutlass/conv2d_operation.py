@@ -37,6 +37,7 @@ import numpy as np
 from typeguard import typechecked
 
 from pycutlass import *
+import pycutlass
 
 
 # @typechecked
@@ -206,7 +207,7 @@ class Conv2dArguments(ArgumentBase):
             self.operation.rt_module.get_device_workspace_size(self)
 
         if device_workspace_size > 0:
-            self.workspace_buffer = device_mem_alloc(device_workspace_size)
+            self.workspace_buffer = pycutlass.memory_pool.device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
             err, = cuda.cuMemsetD32(
                 workspace_ptr, 0, device_workspace_size // 4)

@@ -1,6 +1,6 @@
 import pycutlass
 from pycutlass import *
-from pycutlass.memory_manager import get_allocated_size
+
 from pycutlass.test import *
 import unittest
 
