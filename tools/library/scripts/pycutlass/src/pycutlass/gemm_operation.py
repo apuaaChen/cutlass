@@ -280,8 +280,13 @@ class GemmArguments(ArgumentBase):
         if device_workspace_size > 0:
             self.workspace_buffer = pycutlass.memory_pool.device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
-            err, = cuda.cuMemsetD32(
-                workspace_ptr, 0, device_workspace_size // 4)
+            if isinstance(self.workspace_buffer, TorchDeviceBuffer):
+                # when using torch, we need to fill it with torch's native function
+                # otherwise the memset is not traced in the cuda graph
+                self.workspace_buffer.tensor.fill_(0)
+            else:
+                err, = cuda.cuMemsetD32(
+                    workspace_ptr, 0, device_workspace_size // 4)
         else:
             workspace_ptr = None
 

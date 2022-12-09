@@ -32,9 +32,18 @@
 
 import rmm
 import numpy as np
+from cuda import cuda
+try:
+    import torch
+    torch_available = True
+except ImportError:
+    torch_available = False
 
 
 class PoolMemoryManager:
+    """
+    Using rmm to manage memory pool
+    """
     def __init__(self, init_pool_size: int, max_pool_size: int) -> None:
         self.pool = rmm.mr.PoolMemoryResource(
             rmm.mr.CudaMemoryResource(),
@@ -62,6 +71,33 @@ class PoolMemoryManager:
     def get_allocated_size(self):
         device_resource = rmm.mr.get_current_device_resource()
         return device_resource.get_allocated_bytes()
+
+
+class TorchDeviceBuffer:
+    def __init__(self, size) -> None:
+        if isinstance(size, int):
+            size = (size,)
+        self.tensor = torch.empty(size=size, dtype=torch.int8, device="cuda")
+        self.ptr = cuda.CUdeviceptr(self.tensor.data_ptr())
+
+class TorchMemoryManager:
+    """
+    Using torch to manage memory pool
+    """
+    def __init__(self) -> None:
+        assert torch_available
+        self.reserved_buffers = {}
+
+    def todevice(self, host_data, dtype=np.float32):
+        if isinstance(host_data, list):
+            return torch.from_numpy(np.array(host_data, dtype=dtype)).to("cuda")
+        elif isinstance(host_data, np.ndarray):
+            return torch.from_numpy(host_data).to("cuda")
+        else:
+            raise NotImplementedError()
+    
+    def device_mem_alloc(self, size):
+        return TorchDeviceBuffer(size)
 
 def align_size(self, size, alignment=256):
     return ((size + alignment - 1) // alignment) * alignment

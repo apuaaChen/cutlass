@@ -40,9 +40,12 @@ this = sys.modules[__name__]
 # artifact manager
 this.compiler = ArtifactManager()
 
-def get_memory_pool(init_pool_size=0, max_pool_size=2**34):
-    this.memory_pool = PoolMemoryManager(
-        init_pool_size=init_pool_size,
-        max_pool_size=max_pool_size
-    )
+def get_memory_pool(manager="rmm", init_pool_size=0, max_pool_size=2**34):
+    if manager == "rmm":
+        this.memory_pool = PoolMemoryManager(
+            init_pool_size=init_pool_size,
+            max_pool_size=max_pool_size
+        )
+    elif manager == "torch":
+        this.memory_pool = TorchMemoryManager()
     return this.memory_pool
