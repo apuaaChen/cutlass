@@ -200,6 +200,16 @@ public:
     }
 
     CUTLASS_DEVICE
+    VisitAccessType visit(
+        int row_idx,
+        int column_idx,
+        AccumulatorAccessType const &accum
+    ) {
+        VisitAccessType* broadcast_fragment_ = reinterpret_cast<VisitAccessType*>(&broadcast_fragment);
+        return broadcast_fragment_[column_idx / kElementsPerAccess];
+    }
+
+    CUTLASS_DEVICE
     void end_row(int row_idx) { }
 
     CUTLASS_DEVICE

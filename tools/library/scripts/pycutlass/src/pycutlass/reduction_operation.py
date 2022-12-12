@@ -323,7 +323,7 @@ class ReductionOperation:
         ''' The full procedural name indicates architeture, extended name, tile size'''
         return self.configuration_name()
 
-    def run(self, arguments: ReductionArguments) -> cuda.CUresult:
+    def run(self, arguments: ReductionArguments, stream=cuda.CUstream(0)) -> cuda.CUresult:
         """
         Configure and launch the cuda kernel with input arguments
         """
@@ -336,7 +336,7 @@ class ReductionOperation:
 
         # launch the kernel
         err = self.rt_module.run(
-            host_workspace, device_workspace, launch_config)
+            host_workspace, device_workspace, launch_config, stream=stream)
 
         if err != cuda.CUresult.CUDA_SUCCESS:
             raise RuntimeError('CUDA Error %s' % str(err))
