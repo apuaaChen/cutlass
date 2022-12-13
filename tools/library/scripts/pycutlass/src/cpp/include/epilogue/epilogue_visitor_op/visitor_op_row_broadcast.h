@@ -206,7 +206,8 @@ public:
         AccumulatorAccessType const &accum
     ) {
         VisitAccessType* broadcast_fragment_ = reinterpret_cast<VisitAccessType*>(&broadcast_fragment);
-        return broadcast_fragment_[column_idx / kElementsPerAccess];
+        int step_idx = column_idx / InputTileIterator::Shape::kColumn;
+        return broadcast_fragment_[step_idx];
     }
 
     CUTLASS_DEVICE
