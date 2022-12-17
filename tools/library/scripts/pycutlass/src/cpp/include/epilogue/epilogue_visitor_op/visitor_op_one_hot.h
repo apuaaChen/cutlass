@@ -189,11 +189,12 @@ public:
     VisitAccessType visit(
         int row_idx,
         int column_idx,
+        int iter_idx,
         AccumulatorAccessType const &accum
     ) { 
         /// Get result from visitor A and visitor B
         VisitAccessTypeVisitor result;
-        result = visitor_op.visit(row_idx, column_idx, accum);
+        result = visitor_op.visit(row_idx, column_idx, iter_idx, accum);
 
         /// Type conversion to column index
         NumericArrayConverter<int, ElementVisit, kElementsPerAccess> index_converter;

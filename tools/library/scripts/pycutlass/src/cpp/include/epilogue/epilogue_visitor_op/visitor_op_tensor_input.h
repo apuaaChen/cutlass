@@ -46,6 +46,21 @@ namespace threadblock {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+template<typename, typename>
+class InputIteratorType {};
+
+template<typename ElementInput, template<typename...> typename IteratorType, typename ThreadMap, typename ElementIterator>
+class InputIteratorType<ElementInput, IteratorType<ThreadMap, ElementIterator>> {
+public:
+    using type = IteratorType<ThreadMap, ElementInput>;
+};
+
+template<typename ElementInput, template<typename, typename, bool, typename, bool> typename IteratorType, typename ThreadMap, typename ElementIterator, bool B1, typename Permute, bool B2>
+class InputIteratorType<ElementInput, IteratorType<ThreadMap, ElementIterator, B1, Permute, B2>> {
+public:
+    using type = IteratorType<ThreadMap, ElementInput, B1, Permute, B2>;
+};
+
 /// Epilogue Visitor operator for the following computation:
 ///
 ///  ElementInput C <- device memory
@@ -61,10 +76,11 @@ public:
     using ElementInput = ElementInput_;
     using ElementAccumulator = ElementAccumulator_;
 
-    using InputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
-        typename InputTileIterator_::ThreadMap,
-        ElementInput
-    >;
+    // using InputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
+    //     typename InputTileIterator_::ThreadMap,
+    //     ElementInput
+    // >;
+    using InputTileIterator = typename InputIteratorType<ElementInput, InputTileIterator_>::type;
 
     static int const kElementsPerAccess = InputTileIterator::kElementsPerAccess;
     
@@ -183,6 +199,7 @@ public:
     VisitAccessType visit(
         int row_idx,
         int column_idx,
+        int iter_idx,
         AccumulatorAccessType const &accum
     ) {
         fragment_T_.clear();

@@ -226,11 +226,12 @@ public:
     VisitAccessType visit(
         int row_idx,
         int column_idx,
+        int iter_idx,
         AccumulatorAccessType const &accum
     ) {
         /// Get result from visitor A and visitor B
-        VisitAccessTypeA result_A = visitor_a_op.visit(row_idx, column_idx, accum);
-        VisitAccessTypeB result_B = visitor_b_op.visit(row_idx, column_idx, accum);
+        VisitAccessTypeA result_A = visitor_a_op.visit(row_idx, column_idx, iter_idx, accum);
+        VisitAccessTypeB result_B = visitor_b_op.visit(row_idx, column_idx, iter_idx, accum);
 
         /// Type conversion
         NumericArrayConverter<ElementCompute, ElementA, kElementsPerAccess> source_converter_A;

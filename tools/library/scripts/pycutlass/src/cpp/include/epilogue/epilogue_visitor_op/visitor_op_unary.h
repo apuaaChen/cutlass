@@ -208,13 +208,14 @@ public:
     VisitAccessType visit(
         int row_idx,
         int column_idx,
+        int iter_idx,
         AccumulatorAccessType const &accum
     ) { 
         /// Get result from visitor A and visitor B
         VisitAccessTypeVisitor result;
 
         if (unary_op.guard()){
-            result = visitor_op.visit(row_idx, column_idx, accum);
+            result = visitor_op.visit(row_idx, column_idx, iter_idx, accum);
         } else {
             result.clear();
         }

@@ -133,6 +133,7 @@ public:
     VisitAccessType visit(
         int row_idx,
         int column_idx,
+        int iter_idx,
         AccumulatorAccessType const &accum
     ) {
         return accum;

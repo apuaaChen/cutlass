@@ -281,10 +281,11 @@ public:
     VisitAccessType visit(
         int row_idx,
         int column_idx,
+        int iter_idx,
         AccumulatorAccessType const &accum) {
 
         /// Get result from visitor
-        VisitAccessTypeVisitor result = visitor_.visit(row_idx, column_idx, accum);
+        VisitAccessTypeVisitor result = visitor_.visit(row_idx, column_idx, iter_idx, accum);
 
         float4* rand_ptr = reinterpret_cast<float4*>(rand.data());
 

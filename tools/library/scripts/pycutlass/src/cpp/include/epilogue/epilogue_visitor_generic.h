@@ -201,8 +201,9 @@ public:
   void visit(
     int row_idx,
     int column_idx,
+    int iter_idx,
     AccumulatorAccessType const &accum) {
-      output_op.visit(row_idx, column_idx, accum);
+      output_op.visit(row_idx, column_idx, iter_idx, accum);
   }
 
   /// Called at the start of a row

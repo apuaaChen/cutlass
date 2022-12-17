@@ -203,11 +203,11 @@ public:
     VisitAccessType visit(
         int row_idx,
         int column_idx,
+        int iter_idx,
         AccumulatorAccessType const &accum
     ) {
         VisitAccessType* broadcast_fragment_ = reinterpret_cast<VisitAccessType*>(&broadcast_fragment);
-        int step_idx = column_idx / InputTileIterator::Shape::kColumn;
-        return broadcast_fragment_[step_idx];
+        return broadcast_fragment_[iter_idx];
     }
 
     CUTLASS_DEVICE
