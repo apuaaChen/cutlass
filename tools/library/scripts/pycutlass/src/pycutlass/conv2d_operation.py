@@ -297,7 +297,7 @@ extern "C" {
 
         self.operation: Conv2dOperation = operation
 
-        self.emitter = EmitConv2dInstance('_type')
+        self.emitter = EmitConv2dInstance('_type', operation.visitor)
 
         self.threads: int = operation.tile_description.num_threads
 
@@ -405,7 +405,7 @@ class Conv2dOperation:
                  arch: int, tile_description: TileDescription,
                  A: TensorDescription, B: TensorDescription, C: TensorDescription,
                  stride_support, epilogue_functor,
-                 swizzling_functor=cutlass.IdentitySwizzle1):
+                 swizzling_functor=cutlass.IdentitySwizzle1, **kwargs):
 
         self.operation_kind: OperationKind = OperationKind.Conv2d
         self.arch: int = arch
@@ -419,11 +419,18 @@ class Conv2dOperation:
         self.stride_support = stride_support
         self.swizzling_functor = swizzling_functor()
 
+        if "visitor" in kwargs:
+            self.visitor = kwargs["visitor"]
+        else:
+            self.visitor = False
+
         self.rt_module: Conv2dRT = Conv2dRT(self)
         self.argument_type = self.rt_module.argument_type
         self.epilogue_type = self.rt_module.epilogue_type
 
-    def run(self, arguments: Conv2dArguments) -> cuda.CUresult:
+        
+
+    def run(self, arguments: Conv2dArguments, stream=cuda.CUstream(0)) -> cuda.CUresult:
         """
         Launch the cuda kernel with input arguments
 
@@ -435,7 +442,8 @@ class Conv2dOperation:
         err = self.rt_module.run(
             arguments.host_workspace,
             arguments.device_workspace,
-            arguments.launch_config)
+            arguments.launch_config,
+            stream=stream)
 
         if err != cuda.CUresult.CUDA_SUCCESS:
             raise RuntimeError('CUDA Error %s' % str(err))
@@ -546,14 +554,20 @@ class Conv2dOperation:
 ###################################################################################################
 
 class EmitConv2dInstance:
-    def __init__(self, operation_suffix=''):
+    def __init__(self, operation_suffix='', visitor=False):
         self.operation_suffix = operation_suffix
+        self.visitor = visitor
         self.includes = [
             "cutlass/cutlass.h",
             "cutlass/conv/kernel/default_conv2d_fprop.h",
             "cutlass/conv/kernel/default_conv2d_dgrad.h",
             "cutlass/conv/kernel/default_conv2d_wgrad.h"
         ]
+        if self.visitor:
+            self.includes += [
+                "conv/implicit_gemm_convolution_with_visitor.h",
+                "epilogue/epilogue_visitor_generic.h"
+            ]
         self.template = """
 // Conv2d${conv_kind_name} ${iterator_algorithm_name} kernel instance "${operation_name}"
 using ${operation_name}_base = 
@@ -583,6 +597,51 @@ typename cutlass::conv::kernel::DefaultConv2d${conv_kind_name}<
 struct ${operation_name}${operation_suffix}:
   public ${operation_name}_base { };
 
+"""
+        self.template_visitor = """
+// line 8
+using ${operation_name}_default = 
+typename cutlass::conv::kernel::DefaultConv2d${conv_kind_name}<
+  ${element_a}, 
+  ${layout_a},
+  ${element_b}, 
+  ${layout_b},
+  ${element_c}, 
+  ${layout_c},
+  ${element_accumulator},
+  ${opcode_class},
+  ${arch},
+  cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
+  cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k} >,
+  cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
+  ${elementwise_epilogue_functor},
+  ${swizzling_functor}, // cutlass::gemm::threadblock::GemmSplitKIdentityThreadblockSwizzle<>,
+  ${stages},
+  ${math_operator},
+  ${iterator_algorithm},
+  ${stride_support},
+  ${align_a},
+  ${align_b}
+>::Kernel;
+
+// develop
+${epilogue_visitor}
+
+using ${operation_name}_Epilogue = typename cutlass::epilogue::threadblock::EpilogueWithVisitorFromExistingEpilogue<
+    ${operation_name}_EpilogueVisitor,
+    typename ${operation_name}_default::Epilogue>::Epilogue;
+
+using ${operation_name}_base =
+    cutlass::conv::kernel::ImplicitGemmConvolutionwithVisitor<
+        ${operation_name}_default::Mma,
+        ${operation_name}_Epilogue,
+        ${operation_name}_default::ThreadblockSwizzle,
+        ${operation_name}_default::kConvolutionalOperator
+    >;
+
+// Define named type
+struct ${operation_name}${operation_suffix} : 
+  public ${operation_name}_base { };
 """
 
     def emit(self, operation):
@@ -617,7 +676,7 @@ struct ${operation_name}${operation_suffix}:
             'instruction_shape_n': str(operation.tile_description.math_instruction.instruction_shape[1]),
             'instruction_shape_k': str(operation.tile_description.math_instruction.instruction_shape[2]),
             'epilogue_vector_length': str(epilogue_vector_length),
-            'epilogue_functor': operation.epilogue_functor.emit(),
+            # 'epilogue_functor': operation.epilogue_functor.emit(),
             'swizzling_functor': operation.swizzling_functor.tag(),
             'stages': str(operation.tile_description.stages),
             'iterator_algorithm': IteratorAlgorithmTag[operation.iterator_algorithm],
@@ -629,4 +688,12 @@ struct ${operation_name}${operation_suffix}:
             'align_b': str(operation.B.alignment),
         }
 
-        return SubstituteTemplate(self.template, values)
+        if self.visitor:
+            values['epilogue_visitor'] = operation.epilogue_functor.emit(operation)
+            values['elementwise_epilogue_functor'] = operation.epilogue_functor.elementwise_functor.emit()
+
+            return SubstituteTemplate(self.template_visitor, values)
+        else:
+            values['epilogue_functor'] = operation.epilogue_functor.emit()
+
+            return SubstituteTemplate(self.template, values)

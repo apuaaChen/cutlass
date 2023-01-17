@@ -48,11 +48,12 @@ template <
   typename ConvProblemSize_ = Conv2dProblemSize,  ///! Convolutional operator on 2D or 3D problem
   conv::GroupMode GroupMode_ = conv::GroupMode::kNone    ///! Group mode
 >
-struct ImplicitGemmConvolution {
+struct ImplicitGemmConvolutionwithVisitor {
 
   using Mma = Mma_;
   using Epilogue = Epilogue_;
-  using EpilogueOutputOp = typename Epilogue::OutputOp;
+  using EpilogueVisitor = typename Epilogue::Visitor;
+//   using EpilogueOutputOp = typename Epilogue::OutputOp;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
   static Operator const kConvolutionalOperator = ConvOperator;
 
@@ -60,13 +61,14 @@ struct ImplicitGemmConvolution {
   using LayoutA = typename Mma::IteratorA::Layout;
   using ElementB = typename Mma::IteratorB::Element;
   using LayoutB = typename Mma::IteratorB::Layout;
-  using ElementC = typename EpilogueOutputOp::ElementOutput;
+//   using ElementC = typename EpilogueOutputOp::ElementOutput;
+  using ElementC = typename EpilogueVisitor::ElementOutput;
 
   /// Set output tensor C layout
   using LayoutC = LayoutA;
 
-  using ElementAccumulator = typename EpilogueOutputOp::ElementAccumulator;
-  using ElementCompute = typename EpilogueOutputOp::ElementCompute;
+//   using ElementAccumulator = typename EpilogueOutputOp::ElementAccumulator;
+//   using ElementCompute = typename EpilogueOutputOp::ElementCompute;
 
   using WarpMmaOperator = typename Mma::Policy::Operator;
 
@@ -118,7 +120,7 @@ struct ImplicitGemmConvolution {
   //
   using ConvOutputIteratorParameter = epilogue::threadblock::ConvOutputIteratorParameter<
     LayoutC,
-    typename Epilogue::OutputTileIterator::Layout, 
+    typename EpilogueVisitor::OutputTileIterator::Layout, 
     TensorRefC,
     ConvOperator,
     ConvProblemSize
@@ -136,7 +138,8 @@ struct ImplicitGemmConvolution {
     TensorRefB ref_B;
     TensorRefC ref_C;
     TensorRefC ref_D;
-    typename EpilogueOutputOp::Params output_op;
+    // typename EpilogueOutputOp::Params output_op;
+    typename EpilogueVisitor::Arguments epilogue_visitor;
     SplitKMode split_k_mode;
 
     //
@@ -160,7 +163,8 @@ struct ImplicitGemmConvolution {
       TensorRefB const & ref_B,
       TensorRefC const & ref_C,
       TensorRefC const & ref_D,
-      typename EpilogueOutputOp::Params const & output_op,
+    //   typename EpilogueOutputOp::Params const & output_op,
+      typename EpilogueVisitor::Arguments const & epilogue_visitor,
       SplitKMode const & split_k_mode = SplitKMode::kSerial
     ):
       problem_size(problem_size),
@@ -168,7 +172,8 @@ struct ImplicitGemmConvolution {
       ref_B(ref_B),
       ref_C(ref_C),
       ref_D(ref_D),
-      output_op(output_op),
+    //   output_op(output_op),
+      epilogue_visitor(epilogue_visitor),
       split_k_mode(split_k_mode)
     {
 
@@ -189,11 +194,16 @@ struct ImplicitGemmConvolution {
     typename Mma::IteratorA::Element const *ptr_A;
     typename Mma::IteratorB::Params iterator_B;
     typename Mma::IteratorB::Element const *ptr_B;
-    typename Epilogue::OutputTileIterator::Params iterator_C;
-    typename Epilogue::OutputTileIterator::Element *ptr_C;
-    typename Epilogue::OutputTileIterator::Params iterator_D;
-    typename Epilogue::OutputTileIterator::Element *ptr_D;
-    typename EpilogueOutputOp::Params output_op;
+    // typename Epilogue::OutputTileIterator::Params iterator_C;
+    typename EpilogueVisitor::OutputTileIterator::Params iterator_C;
+    // typename Epilogue::OutputTileIterator::Element *ptr_C;
+    typename EpilogueVisitor::OutputTileIterator::Element *ptr_C;
+    // typename Epilogue::OutputTileIterator::Params iterator_D;
+    typename EpilogueVisitor::OutputTileIterator::Params iterator_D;
+    // typename Epilogue::OutputTileIterator::Element *ptr_D;
+    typename EpilogueVisitor::OutputTileIterator::Element *ptr_D;
+    // typename EpilogueOutputOp::Params output_op;
+    typename EpilogueVisitor::Params epilogue_visitor;
     int *semaphore;
     SplitKMode split_k_mode;
 
@@ -220,7 +230,8 @@ struct ImplicitGemmConvolution {
       ptr_C(args.ref_C.data()),
       iterator_D(ConvOutputIteratorParameter::layout(args.ref_D)),
       ptr_D(args.ref_D.data()),
-      output_op(args.output_op),
+    //   output_op(args.output_op),
+      epilogue_visitor(args.epilogue_visitor),
       semaphore(semaphore),
       split_k_mode(args.split_k_mode)
     {
@@ -250,6 +261,7 @@ struct ImplicitGemmConvolution {
   union SharedStorage {
     typename Mma::SharedStorage main_loop;
     typename Epilogue::SharedStorage epilogue;
+    typename EpilogueVisitor::SharedStorage visitor;
   };
 
   //
@@ -257,7 +269,7 @@ struct ImplicitGemmConvolution {
   //
 
   CUTLASS_HOST_DEVICE
-  ImplicitGemmConvolution() { } 
+  ImplicitGemmConvolutionwithVisitor() { } 
 
   /// Executes one ImplicitGEMM
   CUTLASS_DEVICE
@@ -336,7 +348,7 @@ struct ImplicitGemmConvolution {
     // Epilogue
     //
 
-    EpilogueOutputOp output_op(params.output_op);
+    // EpilogueOutputOp output_op(params.output_op);
 
     // Construct the semaphore.
     int block_idx = threadblock_tile_idx.m() + threadblock_tile_idx.n() * params.grid_tiled_shape.m();
@@ -347,37 +359,47 @@ struct ImplicitGemmConvolution {
     threadblock_tile_idx =
         threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
-    // If performing a reduction via split-K, fetch the initial synchronization
-    if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {
+    // Currently, semaphore is not supported
+    // // If performing a reduction via split-K, fetch the initial synchronization
+    // if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {
         
-      // Fetch the synchronization lock initially but do not block.
-      semaphore.fetch();
+    //   // Fetch the synchronization lock initially but do not block.
+    //   semaphore.fetch();
 
-      // Indicate which position in a serial reduction the output operator is currently updating
-      output_op.set_k_partition(threadblock_tile_idx.k(), params.grid_tiled_shape.k());
-    }
+    //   // Indicate which position in a serial reduction the output operator is currently updating
+    //   output_op.set_k_partition(threadblock_tile_idx.k(), params.grid_tiled_shape.k());
+    // }
 
     MatrixCoord threadblock_offset(
       threadblock_tile_idx.m() * Mma::Shape::kM,
       threadblock_tile_idx.n() * Mma::Shape::kN
     );
 
-    // Tile iterator writing to destination tensor
-    typename Epilogue::OutputTileIterator iterator_D(
-      params.iterator_D,
-      params.ptr_D,
-      ConvOutputIteratorParameter::extent(params.problem_size),
-      thread_idx,
-      threadblock_offset
-    );
+    // // Tile iterator writing to destination tensor
+    // typename Epilogue::OutputTileIterator iterator_D(
+    //   params.iterator_D,
+    //   params.ptr_D,
+    //   ConvOutputIteratorParameter::extent(params.problem_size),
+    //   thread_idx,
+    //   threadblock_offset
+    // );
     
-    // Tile iterator reading from source accumulator tensor
-    typename Epilogue::OutputTileIterator iterator_C(
-      params.iterator_C,
-      params.ptr_C,
-      ConvOutputIteratorParameter::extent(params.problem_size),
-      thread_idx,
-      threadblock_offset
+    // // Tile iterator reading from source accumulator tensor
+    // typename Epilogue::OutputTileIterator iterator_C(
+    //   params.iterator_C,
+    //   params.ptr_C,
+    //   ConvOutputIteratorParameter::extent(params.problem_size),
+    //   thread_idx,
+    //   threadblock_offset
+    // );
+
+    EpilogueVisitor epilogue_visitor(
+        params.epilogue_visitor,
+        shared_storage.visitor,
+        threadblock_offset,
+        threadblock_tile_idx,
+        thread_idx,
+        ConvOutputIteratorParameter::extent(params.problem_size)
     );
 
 
@@ -389,24 +411,25 @@ struct ImplicitGemmConvolution {
       lane_idx);
 
     // Wait on the semaphore - this latency may have been covered by iterator construction
-    if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {
+    // if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {
         
-      // For subsequent threadblocks, the source matrix is held in the 'D' tensor.
-      if (threadblock_tile_idx.k()) {
-        iterator_C = iterator_D;
-      }
+    // //   // For subsequent threadblocks, the source matrix is held in the 'D' tensor.
+    // //   if (threadblock_tile_idx.k()) {
+    // //     iterator_C = iterator_D;
+    // //   }
 
-      semaphore.wait(threadblock_tile_idx.k());
+    //   semaphore.wait(threadblock_tile_idx.k());
 
-    }
-    // Each split-k-slice writes to a unique tensor location
-    else if (params.split_k_mode == SplitKMode::kParallel) {
-      iterator_D.add_pointer_offset(threadblock_tile_idx.k() * 
-        cutlass::conv::implicit_gemm_tensor_c_size(ConvOperator, params.problem_size));
-    }
+    // }
+    // // Each split-k-slice writes to a unique tensor location
+    // else if (params.split_k_mode == SplitKMode::kParallel) {
+    //   iterator_D.add_pointer_offset(threadblock_tile_idx.k() * 
+    //     cutlass::conv::implicit_gemm_tensor_c_size(ConvOperator, params.problem_size));
+    // }
 
     // Run efficient epilogue
-    epilogue(output_op, iterator_D, accumulators, iterator_C);
+    // epilogue(output_op, iterator_D, accumulators, iterator_C);
+    epilogue(epilogue_visitor, accumulators);
   
     //
     // Release the semaphore

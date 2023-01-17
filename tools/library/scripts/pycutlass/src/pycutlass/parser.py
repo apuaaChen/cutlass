@@ -222,10 +222,19 @@ class NameNode:
 
 class ScalarInputNode(NameNode):
     # Concept: scalar
-    def __init__(self, node) -> None:
+    def __init__(self, element_accumulator, node, element_input=None) -> None:
         super().__init__(node)
         self.tag = "Scalar:" + self.tag
         self.type = "scalar"
+        self.element_accumulator = element_accumulator
+        self.element_input = element_input
+    
+    def get_epilogue_node(self, *args):
+        self.epilogue_node = ScalarInputOp(self.element_accumulator, self.element_input)
+    
+    def get_argument(self, visitor_args, kwargs):
+        self.argument = self.epilogue_node.argument_type(kwargs[self.id + "_ptr"])
+
 
 class AccumulatorNode(NameNode):
     # Concept: VisitorOpAccumulator
@@ -709,9 +718,9 @@ using ${operation_name}_EpilogueVisitor = cutlass::epilogue::threadblock::Epilog
                 for input_key in function.input_args.keys():
                     if input_key == "accum":
                         continue
-                    if function.input_args[input_key][0] == "scalar": 
-                        # _kwargs[input_key] = kwargs[input_key]
-                        continue
+                    # if function.input_args[input_key][0] == "scalar": 
+                    #     # _kwargs[input_key] = kwargs[input_key]
+                    #     continue
                     # tensor input
                     else:
                         if isinstance(kwargs[input_key], np.ndarray):

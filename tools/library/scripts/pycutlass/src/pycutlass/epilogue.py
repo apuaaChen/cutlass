@@ -406,6 +406,19 @@ def sigmoid_op(x: np.ndarray):
 class sigmoid(ActivationFunctor):
     tag = "cutlass::epilogue::thread::Sigmoid"
 
+    def __init__(self, element_compute) -> None:
+        super().__init__(element_compute)
+        class _Arguments(ctypes.Structure):
+            _fields_ = [
+                ("tmp", ctypes.c_int)
+            ]
+            def __init__(self, *args) -> None:
+                self.tmp = 0
+        self.argument_type = _Arguments
+    
+    def emit_visitor(self):
+        return "cutlass::SigmoidVisitor"
+
     @staticmethod
     def numpy(x: np.ndarray):
         return sigmoid_op(x)
@@ -1124,6 +1137,39 @@ using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpColumnBroadcas
         else:
             return operator[:-3] + ", " + DataTypeTag[self.element_input] + ">;"
 
+
+class ScalarInputOp:
+    Template = """
+using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpScalarInput<
+    ${element_accumulator}, ${input_tile_iterator}>;
+"""
+    counter = 0
+    def __init__(self, element_accumulator, element_input=None) -> None:
+        self.element_accumulator = element_accumulator
+
+        self.instance_name = "ScalarInputOp%d" % ScalarInputOp.counter
+        ScalarInputOp.counter += 1
+
+        class _Arguments(ctypes.Structure):
+            _fields_ = [
+                ("input_ptr", ctypes.c_void_p)
+            ]
+            def __init__(self, input_ptr) -> None:
+                self.input_ptr = int(input_ptr)
+        
+        self.argument_type = _Arguments
+        self.element_input = element_input
+    
+    def emit(self, operation):
+        values = {
+            "instance_name": self.instance_name,
+            "element_accumulator": DataTypeTag[self.element_accumulator],
+            "input_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator"
+        }
+        operator = SubstituteTemplate(self.Template, values)
+        if self.element_input is not None:
+            return operator[:-3] + ", " + DataTypeTag[self.element_input] + ">;"
+        return operator
 
 
 class TensorInputOp:

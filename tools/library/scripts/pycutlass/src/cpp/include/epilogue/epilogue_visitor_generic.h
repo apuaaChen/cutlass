@@ -51,6 +51,7 @@
 
 #include "epilogue_visitor_op/visitor_op_linear_combination.h"
 #include "epilogue_visitor_op/visitor_op_tensor_input.h"
+#include "epilogue_visitor_op/visitor_op_scalar_input.h"
 #include "epilogue_visitor_op/visitor_op_accumulator.h"
 #include "epilogue_visitor_op/visitor_op_row_broadcast.h"
 #include "epilogue_visitor_op/visitor_op_tensor_output.h"

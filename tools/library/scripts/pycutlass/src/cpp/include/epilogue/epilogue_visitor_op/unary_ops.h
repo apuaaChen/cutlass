@@ -510,6 +510,57 @@ struct GeluForwardVisitor {
     }
 };
 
+
+/// Sigmoid
+template <typename T, int N, typename TPtr=T>
+struct SigmoidVisitor {
+    /// Arguments
+    struct Arguments {
+        // a placeholder argument to ensure correctness of ctypes
+        int tmp;
+
+        CUTLASS_HOST_DEVICE
+        Arguments(): tmp(0) { };
+
+        CUTLASS_HOST_DEVICE
+        Arguments(int tmp): tmp(tmp) { };
+    };
+
+    /// Param
+    struct Params {
+        CUTLASS_HOST_DEVICE
+        Params(){ };
+        Params(Arguments const &args) { }
+    };
+
+    /// Constructor
+    CUTLASS_HOST_DEVICE
+    SigmoidVisitor(Params const &params) { }
+
+    /// Scalar operator
+    CUTLASS_HOST_DEVICE
+    T sigmoid_op(T const &scalar) const {
+        return T(1) / (T(1) + fast_exp(-scalar));
+    }
+
+    /// vector operator
+    CUTLASS_HOST_DEVICE
+    Array<T, N> operator()(Array<T, N> const &frag) const {
+        Array<T, N> y;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int i=0; i < N; ++i) {
+            y[i] = sigmoid_op(frag[i]);
+        }
+
+        return y;
+    }
+
+    CUTLASS_HOST_DEVICE
+    bool guard() {
+        return true;
+    }
+};
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass
