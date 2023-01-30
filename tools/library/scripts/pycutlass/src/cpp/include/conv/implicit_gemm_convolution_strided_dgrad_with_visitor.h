@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Template for a pipelined Implicit GEMM with epilogue visitor
+    \brief Template for a pipelined Implicit GEMM with epilogue visitor.
 */
 
 #pragma once
@@ -46,10 +46,9 @@ template <
   typename Epilogue_,                             ///! Epilogue
   typename ThreadblockSwizzle_,                   ///! Threadblock swizzling function
   conv::Operator ConvOperator,                    ///! Convolutional operator (Fprop, Dgrad, Wgrad)
-  typename ConvProblemSize_ = Conv2dProblemSize,  ///! Convolutional operator on 2D or 3D problem
-  conv::GroupMode GroupMode_ = conv::GroupMode::kNone    ///! Group mode
+  typename ConvProblemSize_ = Conv2dProblemSize   ///! Convolutional operator on 2D or 3D problem
 >
-struct ImplicitGemmConvolutionwithVisitor {
+struct ImplicitGemmConvolutionStridedDgradwithVisitor {
 
   using Mma = Mma_;
   using Epilogue = Epilogue_;
@@ -104,7 +103,7 @@ struct ImplicitGemmConvolutionwithVisitor {
   /// Conv dimension and problem size structure (Conv2d or Conv3d)
   using ConvProblemSize = ConvProblemSize_;
 
-  static conv::GroupMode const kGroupMode = GroupMode_;
+  static conv::GroupMode const kGroupMode = conv::GroupMode::kNone;
 
   /// Wgrad C stride idx for implicit gemm algorithm 
   // Conv2d row-major matrix C (KxRSC) 
@@ -115,6 +114,17 @@ struct ImplicitGemmConvolutionwithVisitor {
   /// This chooses the appropriate stride element of the C tensor.
   static int const kTensorCStrideIdx = 
     (kConvolutionalOperator == conv::Operator::kWgrad ? kWgradCStrideIdx : 0);
+
+  // Strided dgrad uses a specialized threadblock swizzle for functionality and performance
+  static_assert((platform::is_same<ThreadblockSwizzle,
+                      threadblock::StridedDgradHorizontalThreadblockSwizzle>::value) ||
+                (platform::is_same<ThreadblockSwizzle,
+                      threadblock::StridedDgradIdentityThreadblockSwizzle<1>>::value) ||
+                (platform::is_same<ThreadblockSwizzle,
+                      threadblock::StridedDgradIdentityThreadblockSwizzle<4>>::value) ||
+                (platform::is_same<ThreadblockSwizzle,
+                      threadblock::StridedDgradIdentityThreadblockSwizzle<8>>::value),
+    "Needs ThreadblockSwizzle type specialized for strided dgrad");
 
   //
   //
@@ -186,11 +196,9 @@ struct ImplicitGemmConvolutionwithVisitor {
   struct Params {
     ConvProblemSize problem_size;
     cutlass::gemm::GemmCoord grid_tiled_shape;
-    gemm::GemmCoord implicit_gemm_problem_size;
-    int swizzle_log_tile;
-
+    FastDivmod stride_h_divmod;
+    FastDivmod stride_w_divmod;
     int gemm_k_iterations;
-    int gemm_k_iterations_per_channel;
     typename Mma::IteratorA::Params iterator_A;
     typename Mma::IteratorA::Element const *ptr_A;
     typename Mma::IteratorB::Params iterator_B;
@@ -213,7 +221,7 @@ struct ImplicitGemmConvolutionwithVisitor {
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): swizzle_log_tile(0), gemm_k_iterations(0) { }
+    Params(): gemm_k_iterations(0) { }
 
     /// 
     CUTLASS_HOST_DEVICE
@@ -222,39 +230,30 @@ struct ImplicitGemmConvolutionwithVisitor {
       int *semaphore = nullptr
     ):
       problem_size(args.problem_size),
-      implicit_gemm_problem_size(cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size)),
+      stride_h_divmod(args.problem_size.stride_h),
+      stride_w_divmod(args.problem_size.stride_w),
       iterator_A(Mma::IteratorA::getParams(args.problem_size, args.ref_A.layout())),
       ptr_A(args.ref_A.data()),
       iterator_B(args.problem_size, args.ref_B.layout()),
       ptr_B(args.ref_B.data()),
-      iterator_C(ConvOutputIteratorParameter::layout(args.ref_C)),
+      iterator_C(ConvOutputIteratorParameter::layout(args.ref_C), args.problem_size, ThreadblockShape::kM),
       ptr_C(args.ref_C.data()),
-      iterator_D(ConvOutputIteratorParameter::layout(args.ref_D)),
+      iterator_D(ConvOutputIteratorParameter::layout(args.ref_D), args.problem_size, ThreadblockShape::kM),
       ptr_D(args.ref_D.data()),
     //   output_op(args.output_op),
-      epilogue_visitor(args.epilogue_visitor),
+      epilogue_visitor(args.epilogue_visitor, ConvOutputIteratorParameter::layout(args.ref_D), args.problem_size, ThreadblockShape::kM),
       semaphore(semaphore),
       split_k_mode(args.split_k_mode)
     {
-      gemm_k_iterations = implicit_gemm_k_iterations(
-        kConvolutionalOperator,
-        ThreadblockShape::kK,
-        args.problem_size,
-        kIteratorAlgorithm,
-        kGroupMode,
-        ThreadblockShape::kN);
-
-      gemm_k_iterations_per_channel = implicit_gemm_k_iterations_per_channel(
-          kConvolutionalOperator, ThreadblockShape::kK, args.problem_size, kIteratorAlgorithm);
+      gemm_k_iterations = implicit_gemm_k_iterations(kConvolutionalOperator, ThreadblockShape::kK, args.problem_size);
 
       ThreadblockSwizzle threadblock_swizzle;
 
       grid_tiled_shape = threadblock_swizzle.get_tiled_shape(
-        implicit_gemm_problem_size,
+        kConvolutionalOperator,
+        args.problem_size,
         {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
         args.problem_size.split_k_slices);
-
-      swizzle_log_tile = threadblock_swizzle.get_log_tile(grid_tiled_shape);
     }
   };
 
@@ -270,7 +269,7 @@ struct ImplicitGemmConvolutionwithVisitor {
   //
 
   CUTLASS_HOST_DEVICE
-  ImplicitGemmConvolutionwithVisitor() { } 
+  ImplicitGemmConvolutionStridedDgradwithVisitor() { } 
 
   /// Executes one ImplicitGEMM
   CUTLASS_DEVICE
@@ -280,7 +279,8 @@ struct ImplicitGemmConvolutionwithVisitor {
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord threadblock_tile_idx =
-        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
+        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+
 
     // Early exit if CTA is out of range
     if (params.grid_tiled_shape.m() <= threadblock_tile_idx.m() ||
@@ -291,59 +291,97 @@ struct ImplicitGemmConvolutionwithVisitor {
 
     // Compute position within threadblock
     int thread_idx = threadIdx.x;
-    int iterator_A_column_offset = threadblock_tile_idx.k() * Mma::Shape::kK;
-    if (kGroupMode != GroupMode::kNone) {
-      if (kGroupMode != GroupMode::kDepthwise) {
-        int k_per_group = params.problem_size.K / params.problem_size.groups;
-        int group_idx = threadblock_tile_idx.n() * Mma::Shape::kN / k_per_group;
-        int channels_per_group = params.problem_size.C / params.problem_size.groups;
-        iterator_A_column_offset += group_idx * channels_per_group;
-      } else {
-        iterator_A_column_offset += threadblock_tile_idx.n() * Mma::Shape::kN;
-      }
-    } 
 
-    // Construct iterators to A and B operands
-    typename Mma::IteratorA iterator_A(
-      params.iterator_A,
-      params.problem_size,
-      params.ptr_A,
-      thread_idx,
-      MatrixCoord(
-        threadblock_tile_idx.m() * Mma::Shape::kM,
-        iterator_A_column_offset
-      )
-    );
+    // Compute starting filter position for strided dgrad
+    int tile_m_per_filter = strided_dgrad_tile_m_per_filter(params.problem_size, 
+                                                            ThreadblockShape::kM);
+    int filter_tile_m = (threadblock_tile_idx.m() / tile_m_per_filter);
     
-    typename Mma::IteratorB iterator_B(
-      params.iterator_B,
+
+    // The subsequent fast_divmod() operations are equivalent to the following logical computation:
+    //
+    // int start_r = filter_tile_m / (params.problem_size.stride_w);
+    // int start_s = filter_tile_m % (params.problem_size.stride_w);
+
+    int start_r, start_s;
+    params.stride_w_divmod(start_r, start_s, filter_tile_m);
+
+    int filter_r = start_r;
+    int filter_s = start_s;
+
+    if (params.problem_size.mode == Mode::kConvolution) {
+      filter_r = (params.problem_size.R - 1 - filter_r);
+      filter_s = (params.problem_size.S - 1 - filter_s);
+    }
+
+    // Starting h, w positions for filter position in gemm_k=0
+    int start_h, start_w;
+    strided_dgrad_starting_coords(
       params.problem_size,
-      params.ptr_B,
-      thread_idx,
-      MatrixCoord(
-        threadblock_tile_idx.k() * Mma::Shape::kK,
-        threadblock_tile_idx.n() * Mma::Shape::kN
-      )
-    );
+      params.stride_h_divmod, params.stride_w_divmod,
+      filter_r, filter_s,
+      start_h, start_w);
+    
+    // if (threadblock_tile_idx.m() == 147) {
+    //   printf("blockIdx.x: %d\n", int(blockIdx.x));
+    //   printf("blockIdx.y: %d\n", int(blockIdx.y));
+    // }
+
+    if (start_h >= params.problem_size.H || start_w >= params.problem_size.W) {
+      return;
+    }
+
+    typename Mma::FragmentC accumulators;
+
+    accumulators.clear();
 
     // Broadcast the warp_id computed by lane 0 to ensure dependent code
     // is compiled as warp-uniform.
     int warp_idx = __shfl_sync(0xffffffff, threadIdx.x / 32, 0);
     int lane_idx = threadIdx.x % 32;
 
-    //
-    // Main loop
-    //
+    // Check if CTA contributes valid MMA (Dy * w) and accumulator will be non-zero after MMA
+    if (start_r < params.problem_size.R && start_s < params.problem_size.S) {
+      // Scale gemm_k_iterations for strided dgrad
+      int gemm_k_iterations = (params.gemm_k_iterations / (params.problem_size.R * params.problem_size.S)
+                              ) * params.problem_size.num_gemm_k_filter_positions(start_r, start_s);
+      
+      // Construct iterators to A and B operands
+      typename Mma::IteratorA iterator_A(
+        params.iterator_A,
+        params.problem_size,
+        params.ptr_A,
+        thread_idx,
+        params.stride_h_divmod, params.stride_w_divmod,
+        start_r, start_s,
+        MatrixCoord(
+          threadblock_tile_idx.m() * Mma::Shape::kM,
+          threadblock_tile_idx.k() * Mma::Shape::kK
+        ) 
+      );
+      
+      typename Mma::IteratorB iterator_B(
+        params.iterator_B,
+        params.problem_size,
+        params.ptr_B,
+        thread_idx,
+        start_r, start_s,
+        MatrixCoord(
+          threadblock_tile_idx.k() * Mma::Shape::kK,
+          threadblock_tile_idx.n() * Mma::Shape::kN
+        )
+      );
 
-    // Construct thread-scoped matrix multiply
-    Mma mma(shared_storage.main_loop, thread_idx, warp_idx, lane_idx);
+      //
+      // Main loop
+      //
 
-    typename Mma::FragmentC accumulators;
+      // Construct thread-scoped matrix multiply
+      Mma mma(shared_storage.main_loop, thread_idx, warp_idx, lane_idx);
 
-    accumulators.clear();
-
-    // Compute threadblock-scoped matrix multiply-add
-    mma(params.gemm_k_iterations, accumulators, iterator_A, iterator_B, accumulators, params.gemm_k_iterations_per_channel);
+      // Compute threadblock-scoped matrix multiply-add
+      mma(gemm_k_iterations, accumulators, iterator_A, iterator_B, accumulators);
+    }
 
     //
     // Epilogue
@@ -358,9 +396,8 @@ struct ImplicitGemmConvolutionwithVisitor {
     
     // Compute logical position within grid
     threadblock_tile_idx =
-        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
+        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
 
-    // Currently, semaphore is not supported
     // // If performing a reduction via split-K, fetch the initial synchronization
     // if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {
         
@@ -382,6 +419,8 @@ struct ImplicitGemmConvolutionwithVisitor {
     //   params.ptr_D,
     //   ConvOutputIteratorParameter::extent(params.problem_size),
     //   thread_idx,
+    //   params.stride_h_divmod, params.stride_w_divmod,
+    //   start_r, start_s,
     //   threadblock_offset
     // );
     
@@ -391,6 +430,8 @@ struct ImplicitGemmConvolutionwithVisitor {
     //   params.ptr_C,
     //   ConvOutputIteratorParameter::extent(params.problem_size),
     //   thread_idx,
+    //   params.stride_h_divmod, params.stride_w_divmod,
+    //   start_r, start_s,
     //   threadblock_offset
     // );
 
@@ -400,6 +441,8 @@ struct ImplicitGemmConvolutionwithVisitor {
         threadblock_offset,
         threadblock_tile_idx,
         thread_idx,
+        params.stride_h_divmod, params.stride_w_divmod,
+        start_r, start_s,
         ConvOutputIteratorParameter::extent(params.problem_size)
     );
 
@@ -430,6 +473,7 @@ struct ImplicitGemmConvolutionwithVisitor {
 
     // Run efficient epilogue
     // epilogue(output_op, iterator_D, accumulators, iterator_C);
+
     epilogue(epilogue_visitor, accumulators);
   
     //

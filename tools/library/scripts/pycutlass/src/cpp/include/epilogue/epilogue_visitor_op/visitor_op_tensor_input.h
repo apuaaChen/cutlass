@@ -35,6 +35,7 @@
 */
 
 #pragma once
+#include "cutlass/fast_math.h"
 #include "cutlass/cutlass.h"
 #include "batch_iterator.h"
 
@@ -135,6 +136,13 @@ public:
             input_ptr(args.input_ptr),
             batch_iterator_params(args.batch_iterator_args)
         { }
+
+        // Overloaded for StridedDgrad
+        Params(Arguments const &args, cutlass::layout::RowMajor const &layout, cutlass::conv::Conv2dProblemSize problem_size_, int threadblock_row):
+            params_input(layout, problem_size_, threadblock_row),
+            input_ptr(args.input_ptr),
+            batch_iterator_params(args.batch_iterator_args)
+        { }
     };
 
 private:
@@ -159,6 +167,32 @@ public:
                 params.input_ptr,
                 problem_size,
                 thread_idx,
+                threadblock_offset
+            )
+        ),
+        problem_size(problem_size),
+        batch_iterator_(params.batch_iterator_params) { }
+    
+
+    // Overloaded for strided dgrad
+    CUTLASS_HOST_DEVICE
+    VisitorOpTensorInput(
+        Params const &params,
+        SharedStorage &shared_storage,
+        int thread_idx,
+        FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
+        int start_r, int start_s,
+        MatrixCoord threadblock_offset,
+        MatrixCoord problem_size
+    ):
+        iterator_T_(
+            InputTileIterator(
+                params.params_input,
+                params.input_ptr,
+                problem_size,
+                thread_idx,
+                stride_h_divmod, stride_w_divmod,
+                start_r, start_s,
                 threadblock_offset
             )
         ),

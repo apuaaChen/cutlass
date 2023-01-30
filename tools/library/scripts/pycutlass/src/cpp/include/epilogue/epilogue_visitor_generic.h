@@ -41,6 +41,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/fast_math.h"
 #include "cutlass/arch/memory.h"
 #include "cutlass/arch/memory_sm75.h"
 #include "cutlass/gemm/kernel/gemm_transpose_operands.h"
@@ -132,6 +133,12 @@ public:
     {
 
     }
+
+    // Overloaded for StridedDgrad
+    CUTLASS_HOST_DEVICE
+    Params(Arguments const &args, cutlass::layout::RowMajor const &layout, cutlass::conv::Conv2dProblemSize problem_size_, int threadblock_row):
+      output_op_params(args.output_op_args, layout, problem_size_, threadblock_row)
+    { }
   };
 
 
@@ -153,6 +160,21 @@ public:
     MatrixCoord problem_size
   ):
     output_op(params.output_op_params, shared_storage.output_smem, thread_idx, threadblock_offset, problem_size)
+  { }
+
+  /// Constructor overloaded for dgrad
+  CUTLASS_DEVICE
+  EpilogueVisitorGeneric(
+    Params const &params,                                         ///< Parameters routed to the epilogue
+    SharedStorage &shared_storage,                                ///< Shared storage needed by the functors here
+    MatrixCoord threadblock_offset,
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
+    int start_r, int start_s,
+    MatrixCoord problem_size
+  ):
+    output_op(params.output_op_params, shared_storage.output_smem, thread_idx, stride_h_divmod, stride_w_divmod, start_r, start_s, threadblock_offset, problem_size)
   { }
 
   /// Helper to indicate split-K behavior

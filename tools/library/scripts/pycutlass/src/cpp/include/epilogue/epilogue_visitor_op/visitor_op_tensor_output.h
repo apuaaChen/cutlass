@@ -35,6 +35,7 @@
 */
 
 #pragma once
+#include "cutlass/fast_math.h"
 #include "cutlass/cutlass.h"
 #include "stdio.h"
 
@@ -131,6 +132,15 @@ public:
             batch_stride(args.batch_stride),
             visitor_param(args.visitor_arg)
         { }
+
+        // Overloaded for StridedDgrad
+        CUTLASS_HOST_DEVICE
+        Params(Arguments const &args, cutlass::layout::RowMajor const &layout, cutlass::conv::Conv2dProblemSize problem_size_, int threadblock_row):
+            params_output(layout, problem_size_, threadblock_row),
+            output_ptr(args.output_ptr),
+            batch_stride(args.batch_stride),
+            visitor_param(args.visitor_arg, layout, problem_size_, threadblock_row)
+        { }
     };
 
 private:
@@ -158,6 +168,32 @@ public:
                 params.output_ptr,
                 problem_size,
                 thread_idx,
+                threadblock_offset
+            )
+        ),
+        problem_size(problem_size),
+        batch_stride_(params.batch_stride) { }
+    
+    /// Constructor overloaded for strided dgrad
+    CUTLASS_HOST_DEVICE
+    VisitorOpTensorOutput(
+        Params const &params,
+        SharedStorage &shared_storage,
+        int thread_idx,
+        FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
+        int start_r, int start_s,
+        MatrixCoord threadblock_offset,
+        MatrixCoord problem_size
+    ):
+        visitor_(params.visitor_param, shared_storage.storage_visitor, thread_idx, stride_h_divmod, stride_w_divmod, start_r, start_s, threadblock_offset, problem_size),
+        iterator_T_(
+            OutputTileIterator(
+                params.params_output,
+                params.output_ptr,
+                problem_size,
+                thread_idx,
+                stride_h_divmod, stride_w_divmod,
+                start_r, start_s,
                 threadblock_offset
             )
         ),

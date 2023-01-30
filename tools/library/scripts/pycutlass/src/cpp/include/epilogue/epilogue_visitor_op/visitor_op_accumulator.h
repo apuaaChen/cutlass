@@ -35,6 +35,7 @@
 */
 
 #pragma once
+#include "cutlass/fast_math.h"
 #include "cutlass/cutlass.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -93,6 +94,9 @@ public:
 
         CUTLASS_HOST_DEVICE
         Params(Arguments const &args) { }
+
+        // Overloaded for StridedDgrad
+        Params(Arguments const &args, cutlass::layout::RowMajor const &layout, cutlass::conv::Conv2dProblemSize problem_size_, int threadblock_row) { }
     };
 
 public:
@@ -102,6 +106,17 @@ public:
         Params const &params,
         SharedStorage &shared_storage,
         int thread_idx,
+        MatrixCoord threadblock_offset,
+        MatrixCoord problem_size
+    ) { }
+
+    CUTLASS_HOST_DEVICE
+    VisitorOpAccumulator(
+        Params const &params,
+        SharedStorage &shared_storage,
+        int thread_idx,
+        FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
+        int start_r, int start_s,
         MatrixCoord threadblock_offset,
         MatrixCoord problem_size
     ) { }

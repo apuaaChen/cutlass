@@ -454,6 +454,11 @@ public:
     mask_.clear();
   }
 
+  CUTLASS_DEVICE
+  MatrixCoord thread_start() const {
+    return MatrixCoord(thread_start_row_, thread_start_column_);
+  }
+
   ///< Efficiently enables all accesses guarded by mask
   CUTLASS_DEVICE void enable_mask() {
     mask_.enable();

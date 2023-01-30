@@ -209,8 +209,11 @@ class Conv2dArguments(ArgumentBase):
         if device_workspace_size > 0:
             self.workspace_buffer = pycutlass.memory_pool.device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
-            err, = cuda.cuMemsetD32(
-                workspace_ptr, 0, device_workspace_size // 4)
+            if isinstance(self.workspace_buffer, TorchDeviceBuffer):
+                self.workspace_buffer.tensor.fill_(0)
+            else:
+                err, = cuda.cuMemsetD32(
+                    workspace_ptr, 0, device_workspace_size // 4)
         else:
             workspace_ptr = None
 
@@ -624,7 +627,7 @@ typename cutlass::conv::kernel::DefaultConv2d${conv_kind_name}<
   ${align_b}
 >::Kernel;
 
-// develop
+// develop 50
 ${epilogue_visitor}
 
 using ${operation_name}_Epilogue = typename cutlass::epilogue::threadblock::EpilogueWithVisitorFromExistingEpilogue<
@@ -632,7 +635,7 @@ using ${operation_name}_Epilogue = typename cutlass::epilogue::threadblock::Epil
     typename ${operation_name}_default::Epilogue>::Epilogue;
 
 using ${operation_name}_base =
-    cutlass::conv::kernel::ImplicitGemmConvolutionwithVisitor<
+    cutlass::conv::kernel::${implicit_gemm_template}<
         ${operation_name}_default::Mma,
         ${operation_name}_Epilogue,
         ${operation_name}_default::ThreadblockSwizzle,
@@ -691,6 +694,11 @@ struct ${operation_name}${operation_suffix} :
         if self.visitor:
             values['epilogue_visitor'] = operation.epilogue_functor.emit(operation)
             values['elementwise_epilogue_functor'] = operation.epilogue_functor.elementwise_functor.emit()
+            if operation.conv_kind == cutlass.conv.Operator.dgrad and operation.stride_support == StrideSupport.Strided:
+                values['implicit_gemm_template'] = "ImplicitGemmConvolutionStridedDgradwithVisitor"
+                self.includes.append("conv/implicit_gemm_convolution_strided_dgrad_with_visitor.h")
+            else:
+                values['implicit_gemm_template'] = "ImplicitGemmConvolutionwithVisitor"
 
             return SubstituteTemplate(self.template_visitor, values)
         else:

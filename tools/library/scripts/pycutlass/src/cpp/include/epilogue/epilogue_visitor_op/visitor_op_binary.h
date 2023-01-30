@@ -35,6 +35,7 @@
 */
 
 #pragma once
+#include "cutlass/fast_math.h"
 #include "cutlass/cutlass.h"
 #include "binary_ops.h"
 
@@ -142,6 +143,14 @@ public:
             visitor_a_param(args.visitor_a_arg),
             visitor_b_param(args.visitor_b_arg)
         { }
+
+        // Overloaded for StridedDgrad
+        CUTLASS_HOST_DEVICE
+        Params(Arguments const &args, cutlass::layout::RowMajor const &layout, cutlass::conv::Conv2dProblemSize problem_size_, int threadblock_row):
+            binary_param(args.binary_arg),
+            visitor_a_param(args.visitor_a_arg, layout, problem_size_, threadblock_row),
+            visitor_b_param(args.visitor_b_arg, layout, problem_size_, threadblock_row)
+        { }
     };
 
 private:
@@ -168,6 +177,22 @@ public:
         binary_op(params.binary_param),
         visitor_a_op(params.visitor_a_param, shared_storage.storage_a, thread_idx, threadblock_offset, problem_size),
         visitor_b_op(params.visitor_b_param, shared_storage.storage_b, thread_idx, threadblock_offset, problem_size)
+    { }
+
+    /// Constructor overloaded for strided dgrad
+    CUTLASS_HOST_DEVICE
+    VisitorOpBinary(
+        Params const &params,
+        SharedStorage &shared_storage,
+        int thread_idx,
+        FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
+        int start_r, int start_s,
+        MatrixCoord threadblock_offset,
+        MatrixCoord problem_size
+    ):
+        binary_op(params.binary_param),
+        visitor_a_op(params.visitor_a_param, shared_storage.storage_a, thread_idx, stride_h_divmod, stride_w_divmod, start_r, start_s, threadblock_offset, problem_size),
+        visitor_b_op(params.visitor_b_param, shared_storage.storage_b, thread_idx, stride_h_divmod, stride_w_divmod, start_r, start_s, threadblock_offset, problem_size)
     { }
 
 

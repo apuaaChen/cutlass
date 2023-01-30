@@ -169,6 +169,14 @@ public:
             batch_iterator_params(args.batch_iterator_args),
             visitor_param(args.visitor_arg)
         { }
+
+        // Overloaded for StridedDgrad
+        CUTLASS_HOST_DEVICE
+        Params(Arguments const &args, cutlass::layout::RowMajor const &layout, cutlass::conv::Conv2dProblemSize problem_size_, int threadblock_row):
+            reduction_ptr(args.reduction_ptr),
+            batch_iterator_params(args.batch_iterator_args),
+            visitor_param(args.visitor_arg, layout, problem_size_, threadblock_row)
+        { }
     };
 
 private:
@@ -194,6 +202,27 @@ public:
     ):
         visitor_(params.visitor_param, shared_storage.storage_visitor,
             thread_idx, threadblock_offset, problem_size),
+        reduction_smem_ptr_(shared_storage.reduction.data()),
+        reduction_output_ptr_(params.reduction_ptr),
+        thread_idx_(thread_idx),
+        threadblock_offset(threadblock_offset),
+        problem_size_(problem_size),
+        batch_iterator_(params.batch_iterator_params)
+    { }
+
+    /// Constructor overloaded for strided dgrad
+    CUTLASS_HOST_DEVICE
+    VisitorOpColumnReduction(
+        Params const &params,
+        SharedStorage &shared_storage,
+        int thread_idx,
+        FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
+        int start_r, int start_s,
+        MatrixCoord threadblock_offset,
+        MatrixCoord problem_size
+    ):
+        visitor_(params.visitor_param, shared_storage.storage_visitor,
+            thread_idx, stride_h_divmod, stride_w_divmod, start_r, start_s, threadblock_offset, problem_size),
         reduction_smem_ptr_(shared_storage.reduction.data()),
         reduction_output_ptr_(params.reduction_ptr),
         thread_idx_(thread_idx),
@@ -453,6 +482,14 @@ public:
             batch_iterator_params(args.batch_iterator_args),
             visitor_param(args.visitor_arg)
         { }
+
+        // Overloaded for StridedDgrad
+        CUTLASS_HOST_DEVICE
+        Params(Arguments const &args, cutlass::layout::RowMajor const &layout, cutlass::conv::Conv2dProblemSize problem_size_, int threadblock_row):
+            reduction_ptr(args.reduction_ptr),
+            batch_iterator_params(args.batch_iterator_args),
+            visitor_param(args.visitor_arg, layout, problem_size_, threadblock_row)
+        { }
     };
 
 private:
@@ -485,6 +522,28 @@ public:
         problem_size_(problem_size),
         batch_iterator_(params.batch_iterator_params)
     { }
+
+    /// Constructor overloaded for strided dgrad
+    CUTLASS_HOST_DEVICE
+    VisitorOpColumnReductionAtomic(
+        Params const &params,
+        SharedStorage &shared_storage,
+        int thread_idx,
+        FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
+        int start_r, int start_s,
+        MatrixCoord threadblock_offset,
+        MatrixCoord problem_size
+    ):
+        visitor_(params.visitor_param, shared_storage.storage_visitor,
+            thread_idx, stride_h_divmod, stride_w_divmod, start_r, start_s, threadblock_offset, problem_size),
+        reduction_smem_ptr_(shared_storage.reduction.data()),
+        reduction_output_ptr_(params.reduction_ptr),
+        thread_idx_(thread_idx),
+        threadblock_offset(threadblock_offset),
+        problem_size_(problem_size),
+        batch_iterator_(params.batch_iterator_params)
+    { }
+
 
     CUTLASS_DEVICE
     void set_batch_index(int batch_idx) {
@@ -537,6 +596,16 @@ public:
     CUTLASS_DEVICE
     void end_step(int step_idx) {
         visitor_.end_step(step_idx);
+    }
+
+    CUTLASS_DEVICE
+    void atomic_add(cutlass::half_t* global_ptr, cutlass::half_t data) {
+        atomicAdd(reinterpret_cast<half*>(global_ptr), data.to_half());
+    }
+
+    CUTLASS_DEVICE
+    void atomic_add(float* global_ptr, float data) {
+        atomicAdd(reinterpret_cast<float*>(global_ptr), data);
     }
 
     CUTLASS_DEVICE
@@ -611,7 +680,8 @@ public:
                 }
 
                 // Store
-                atomicAdd(reinterpret_cast<half*>(&reduction_output_ptr_[column_idx + threadblock_offset.column()]), output_converter(reduction_element).to_half());
+                // atomicAdd(reinterpret_cast<half*>(&reduction_output_ptr_[column_idx + threadblock_offset.column()]), output_converter(reduction_element).to_half());
+                atomic_add(&reduction_output_ptr_[column_idx + threadblock_offset.column()], output_converter(reduction_element));
             }
         }
     }
