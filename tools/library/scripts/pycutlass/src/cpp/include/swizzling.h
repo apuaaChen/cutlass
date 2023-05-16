@@ -38,10 +38,18 @@
 #include "cutlass/gemm/threadblock/threadblock_swizzle.h"
 #include "cutlass/conv/threadblock/threadblock_swizzle.h"
 
-#include <boost/core/demangle.hpp>
+#include <cxxabi.h>
 #include <cuda_runtime.h>
 
 namespace py = pybind11;
+
+std::string demangle(const char* mangled_name) {
+    std::size_t len = 0;
+    int status = 0;
+    std::unique_ptr<char> ptr(
+                __cxxabiv1::__cxa_demangle(mangled_name, nullptr, &len, &status));
+    return ptr.get();
+}
 
 template<typename T>
 void bind_identity_swizzle(py::module & m, std::string name) {
