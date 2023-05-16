@@ -589,6 +589,25 @@ public:
     }
 
     CUTLASS_DEVICE
+    VisitAccessType visit(
+        int row_idx,
+        int column_idx,
+        int iter_idx,
+        AccumulatorAccessType const &accum
+    ) {
+        /// Get result from visitor
+        VisitAccessTypeVisitor result = visitor_.visit(row_idx, column_idx, iter_idx, accum);
+        // TODO: partial reduction
+        NumericArrayConverter<ElementReductionAccumulator, ElementVisitor, kElementsPerAccess> reduction_converter;
+        ReductionOp reduction_op;
+        ReductionAccumulatorAccessType* reduction_fragment_ = reinterpret_cast<ReductionAccumulatorAccessType*>(&reduction_fragment);
+        reduction_fragment_[0] = reduction_op(reduction_fragment_[0], reduction_converter(result));
+
+        return result;
+    }
+
+
+    CUTLASS_DEVICE
     void end_row(int row_idx) {
         visitor_.end_row(row_idx);
     }
@@ -655,7 +674,7 @@ public:
         //
 
         NumericConverter<ElementReduction, ElementReductionAccumulator> output_converter;
-
+        // For gemm reduction
         CUTLASS_PRAGMA_UNROLL
         for (int j = 0; j < ReductionDetail::kThreadAccessesPerRow; ++j) {
             int column_idx = thread_idx_ + j * ReductionDetail::kThreadCount;
@@ -684,6 +703,34 @@ public:
                 atomic_add(&reduction_output_ptr_[column_idx + threadblock_offset.column()], output_converter(reduction_element));
             }
         }
+
+        // // for spmm reduction
+        // if (thread_idx_ < ThreadblockShape::kN){
+        //     int column_idx = thread_idx_;
+        //     ReductionOpScalar reduction_op;
+        //     ElementReductionAccumulator reduction_element = ElementReductionAccumulator();
+        //     int output_column_idx = threadblock_offset.column() + column_idx;
+        //     if (column_idx < ThreadblockShape::kN && output_column_idx < problem_size_.column()) {       
+        //         CUTLASS_PRAGMA_UNROLL
+        //         for (int row = 0; row < ReductionDetail::kThreadRows; ++row) {
+        //             if (row) {
+        //                 auto frag = reduction_smem_ptr_[row * ThreadblockShape::kN + column_idx];
+        //                 reduction_element = reduction_op(reduction_element, frag);
+        //             }
+        //             else {
+                        
+        //                 reduction_element = reduction_smem_ptr_[column_idx];
+        //             }
+        //         }
+
+        //         // Store
+        //         // atomicAdd(reinterpret_cast<half*>(&reduction_output_ptr_[column_idx + threadblock_offset.column()]), output_converter(reduction_element).to_half());
+        //         atomic_add(&reduction_output_ptr_[column_idx + threadblock_offset.column()], output_converter(reduction_element));
+        //     }
+        // }
+        
+
+
     }
 };
 
