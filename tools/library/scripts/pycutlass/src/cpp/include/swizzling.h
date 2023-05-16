@@ -88,7 +88,7 @@ void bind_identity_swizzle(py::module & m, std::string name) {
             py::arg("tiled_shape"), 
             R"pbdoc(Computes CUDA grid dimensions given a size in units of logical tiles)pbdoc")
         .def("tag", [](const T & swizzle){
-            return boost::core::demangle(typeid(T).name());
+            return demangle(typeid(T).name());
         }, R"pbdoc(Returns the c++ name of the swizzling for code emittion)pbdoc");
 }
 
@@ -109,7 +109,7 @@ void bind_swizzle(py::module & m, std::string name, std::string doc) {
             py::arg("tiled_shape"), 
             R"pbdoc(Computes CUDA grid dimensions given a size in units of logical tiles)pbdoc")
         .def("tag", [](const T & swizzle){
-            return boost::core::demangle(typeid(T).name());
+            return demangle(typeid(T).name());
         }, R"pbdoc(Returns the c++ name of the swizzling for code emittion)pbdoc");
 }
 
@@ -131,7 +131,7 @@ void bind_dgrad_swizzle(py::module & m, std::string name) {
             py::arg("tiled_shape"), 
             R"pbdoc(Computes CUDA grid dimensions given a size in units of logical tiles)pbdoc")
         .def("tag", [](const T & swizzle){
-            return boost::core::demangle(typeid(T).name());
+            return demangle(typeid(T).name());
         }, R"pbdoc(Returns the c++ name of the swizzling for code emittion)pbdoc");
 }
 
