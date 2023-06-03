@@ -10,3 +10,8 @@ tools/library/scripts/pycutlass/src/PyCutlass.egg-info/SOURCES.txt
 tools/library/scripts/pycutlass/src/PyCutlass.egg-info/top_level.txt
 tools/library/scripts/pycutlass/src/PyCutlass.egg-info/PKG-INFO
 tools/library/scripts/pycutlass/.eggs/
+*.db
+*.out
+python/build/
+python/cutlass.egg-info/
+*.so
