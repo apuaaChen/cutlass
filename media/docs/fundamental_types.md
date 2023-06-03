@@ -231,7 +231,7 @@ class Coord;
 
 **Example:** Vector operations on coordinates.
 ```c++
-Coord<2> compute_offset(Corod<2> const & base) {
+Coord<2> compute_offset(Coord<2> const & base) {
   
   Coord<2> stride = make_Coord(1, kM);
 
@@ -346,7 +346,7 @@ support on current and future NVIDIA GPUs.
 
 # Copyright
 
-Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

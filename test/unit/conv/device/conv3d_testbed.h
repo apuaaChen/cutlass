@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -184,7 +184,7 @@ public:
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Conv3d::ImplicitGemmKernel::SharedStorage));
+    int smem_size = int(sizeof(typename Conv3d::UnderlyingKernel::SharedStorage));
 
     cudaDeviceProp properties;
     int device_idx;
@@ -200,7 +200,7 @@ public:
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
 
-    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    if (properties.sharedMemPerBlockOptin < smem_size) {
       return false;
     }
 
@@ -294,15 +294,15 @@ public:
         cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, problem_size),
         {
           reinterpret_cast<ElementAccumulator*> (workspace.get()),
-          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::UnderlyingKernel::kTensorCStrideIdx])
         },
         {
           tensor_D_computed.device_data(),
-          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::UnderlyingKernel::kTensorCStrideIdx])
         },
         {
           tensor_C.device_data(),
-          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::UnderlyingKernel::kTensorCStrideIdx])
         },
         // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
         {alpha, beta}
@@ -522,7 +522,7 @@ public:
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // TestAllConv: Runs cutlass::conv::device::ImplicitGemmConvolution operator and compares it with reference
 // TestAllConv runs conv operator on default conv problem sizes from test::conv::device::TestbedConv2dProblemSizes
-// Additionaly, each conv3d test can provide conv problem sizes (conv_test_sizes) and blacklist of sizes 
+// Additionally, each conv3d test can provide conv problem sizes (conv_test_sizes) and blacklist of sizes 
 // (conv_blacklist_sizes)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -573,9 +573,9 @@ bool TestAllConv3d(
       // CUTLASS DGRAD's unity stride specialization only support stride {1, 1, 1} 
       if ((ImplicitGemm::kConvolutionalOperator == 
             cutlass::conv::Operator::kDgrad) && 
-          ((ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+          ((ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kStrideSupport == 
             cutlass::conv::StrideSupport::kUnity) ||
-           (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorB::kStrideSupport == 
+           (ImplicitGemm::UnderlyingKernel::Mma::IteratorB::kStrideSupport == 
             cutlass::conv::StrideSupport::kUnity))) {
         if (!((conv_problem.stride_d == 1) &&
               (conv_problem.stride_h == 1) && 

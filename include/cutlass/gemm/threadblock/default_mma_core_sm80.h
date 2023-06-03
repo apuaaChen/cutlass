@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -36,6 +36,9 @@
 
       Partial specializations for threadblock::Mma operations targeting TensorOp
    instructions.
+
+      SM80 Multi stage kernel expects stage number to be larger or equal to 3
+   to use asyncronous copy.
 */
 
 #pragma once

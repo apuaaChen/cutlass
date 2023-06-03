@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -2156,6 +2156,7 @@ struct Mma<
 
     int const *C = reinterpret_cast<int const *>(&c);
     int *D = reinterpret_cast<int *>(&d);
+
     asm volatile(
         "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.xor.popc {%0,%1,%2,%3}, "
         "{%4,%5,%6,%7}, "
@@ -2171,7 +2172,7 @@ struct Mma<
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
     assert(0);
-    
+
 #endif // defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
   }
 };

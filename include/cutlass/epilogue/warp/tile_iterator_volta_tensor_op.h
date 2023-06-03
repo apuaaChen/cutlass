@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -242,6 +242,11 @@ public:
   void load(Fragment const &frag) {
     load_with_pointer_offset(frag, 0);
   }
+  
+  /// Set smem base address
+  CUTLASS_HOST_DEVICE
+  void set_smem_base_address(Index address) {
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -418,6 +423,11 @@ public:
   CUTLASS_HOST_DEVICE
   void load(Fragment const &frag) {
     load_with_pointer_offset(frag, 0);
+  }
+  
+  /// Set smem base address
+  CUTLASS_HOST_DEVICE
+  void set_smem_base_address(Index address) {
   }
 };
 

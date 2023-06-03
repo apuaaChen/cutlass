@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -66,6 +66,9 @@ namespace device {
 template <typename Trmm>
 struct TestbedTrmmUniversal {
 
+  using ElementA = typename Trmm::ElementA;
+  using ElementB = typename Trmm::ElementB;
+  using ElementC = typename Trmm::ElementC;
   using ElementAccumulator = typename Trmm::ElementAccumulator;
   using ElementCompute = typename Trmm::TrmmKernel::Epilogue::OutputOp::ElementCompute;
 
@@ -364,7 +367,7 @@ struct TestbedTrmmUniversal {
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
 
-    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    if (properties.sharedMemPerBlockOptin < smem_size) {
       return false;
     }
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,6 +40,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/array.h"
 #include "cutlass/coord.h"
+#include "cutlass/complex.h"
 #include "cutlass/functional.h"
 #include "cutlass/numeric_types.h"
 

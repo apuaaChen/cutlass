@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,7 +35,9 @@
 */
 #pragma once
 
-#if !defined(__CUDACC_RTC__)
+#if defined(__CUDACC_RTC__)
+#include "cutlass/floating_point_nvrtc.h"
+#else
 #include <cmath>
 #include <limits>
 #include <cstdint>
@@ -71,8 +73,7 @@ struct alignas(2) bfloat16_t {
   }
 
   /// Default constructor
-  CUTLASS_HOST_DEVICE
-  bfloat16_t() : storage(0) { }
+  bfloat16_t() = default;
 
   /// Floating-point conversion - round toward nearest
   CUTLASS_HOST_DEVICE

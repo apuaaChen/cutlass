@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1247,7 +1247,8 @@ struct Mma<
   ) const {
 
 #if defined(CUTLASS_ARCH_MMA_SM75_ENABLED)
-#if defined(CUTLASS_ARCH_WMMA_ENABLED)
+
+#if (__CUDA_ARCH__ >= 900) || (defined(CUTLASS_ARCH_WMMA_ENABLED))
   using WmmaFragmentA = nvcuda::wmma::fragment<
           nvcuda::wmma::matrix_a,
           Shape::kM,
@@ -1279,6 +1280,7 @@ struct Mma<
 
   nvcuda::wmma::bmma_sync(D, A, B, C, nvcuda::wmma::experimental::bmmaBitOpXOR, 
                                           nvcuda::wmma::experimental::bmmaAccumulateOpPOPC);
+
 #else
 
   CUTLASS_UNUSED(a);
@@ -1289,14 +1291,7 @@ struct Mma<
 
 #endif // defined(CUTLASS_ARCH_WMMA_ENABLED)
 
-#else
-    CUTLASS_UNUSED(a);
-    CUTLASS_UNUSED(b);
-    CUTLASS_UNUSED(c);
-    CUTLASS_UNUSED(d);
-    assert(0);
 #endif
-
   }
 };
 

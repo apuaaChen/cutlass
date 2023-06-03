@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -58,6 +58,11 @@ namespace device {
 
 template <typename Gemm>
 struct MultistageTestbed {
+
+  using ElementA = typename Gemm::ElementA;
+  using ElementB = typename Gemm::ElementB;
+  using ElementC = typename Gemm::ElementC;
+
   using ElementAccumulator = typename Gemm::ElementAccumulator;
   using ElementCompute =
       typename Gemm::GemmKernel::Epilogue::OutputOp::ElementCompute;
@@ -125,7 +130,7 @@ struct MultistageTestbed {
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
 
-    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    if (properties.sharedMemPerBlockOptin < smem_size) {
       return false;
     }
 
