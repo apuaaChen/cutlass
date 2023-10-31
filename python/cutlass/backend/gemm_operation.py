@@ -37,7 +37,7 @@ import enum
 from cuda import cuda, cudart
 import numpy as np
 import rmm
-
+import cutlass
 from cutlass import (
     ComplexTransformTag,
     DataType,
@@ -93,7 +93,7 @@ from cutlass.backend.library import (
     TileDescription,
     api_version,
 )
-from cutlass.backend.memory_manager import device_mem_alloc, todevice
+from cutlass.backend.memory_manager import TorchDeviceBuffer
 from cutlass.backend.operation import ExecutableOperation, LaunchConfiguration
 from cutlass.backend.type_hint import GemmOperation, Tensor
 from cutlass.backend.utils.software import (
@@ -269,10 +269,10 @@ class GemmArguments2x(ArgumentBase):
                 ptr_C_addr += stride_C
                 ptr_D_addr += stride_D
 
-            self.ptr_A_array_buffer = todevice(self.ptr_A_array, dtype=np.int64)
-            self.ptr_B_array_buffer = todevice(self.ptr_B_array, dtype=np.int64)
-            self.ptr_C_array_buffer = todevice(self.ptr_C_array, dtype=np.int64)
-            self.ptr_D_array_buffer = todevice(self.ptr_D_array, dtype=np.int64)
+            self.ptr_A_array_buffer = cutlass.memory_pool.todevice(self.ptr_A_array, dtype=np.int64)
+            self.ptr_B_array_buffer = cutlass.memory_pool.todevice(self.ptr_B_array, dtype=np.int64)
+            self.ptr_C_array_buffer = cutlass.memory_pool.todevice(self.ptr_C_array, dtype=np.int64)
+            self.ptr_D_array_buffer = cutlass.memory_pool.todevice(self.ptr_D_array, dtype=np.int64)
 
         if isinstance(self.operation, GemmOperationUniversal):
             self.initialize()
@@ -329,10 +329,13 @@ class GemmArguments2x(ArgumentBase):
         device_workspace_size = self.operation.rt_module.get_device_workspace_size(self)
 
         if device_workspace_size > 0:
-            self.workspace_buffer = device_mem_alloc(device_workspace_size)
+            self.workspace_buffer = cutlass.memory_pool.device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
-            err, = cuda.cuMemsetD32(
-                workspace_ptr, 0, device_workspace_size // 4)
+            if isinstance(self.workspace_buffer, TorchDeviceBuffer):
+                self.workspace_buffer.tensor.fill_(0)
+            else:
+                err, = cuda.cuMemsetD32(
+                    workspace_ptr, 0, device_workspace_size // 4)
         else:
             workspace_ptr = None
 
@@ -427,31 +430,39 @@ class GemmArguments2xStreamK(GemmArguments2x):
     def initialize(self):
         # Get the host and device workspace
         device_workspace_size = self.operation.rt_module.get_device_workspace_size(self)
-
-        device_workspace_size = 10 << 20
-        if device_workspace_size > 0:
-            self.workspace_buffer = device_mem_alloc(device_workspace_size)
+        if device_workspace_size > 0 and self.gemm_mode == GemmUniversalMode.GemmSplitKParallel:
+            self.workspace_buffer = cutlass.memory_pool.device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
-            err, = cuda.cuMemsetD32(
-                workspace_ptr, 0, device_workspace_size // 4)
-        else:
-            workspace_ptr = None
-
-        device_workspace = 0
-        if workspace_ptr is not None and self.gemm_mode == GemmUniversalMode.GemmSplitKParallel:
-            # In GEMM splik-K parallel, the D pointer is redirected to the workspace
+            if isinstance(self.workspace_buffer, TorchDeviceBuffer):
+                self.workspace_buffer.tensor.fill_(0)
+            else:
+                err, = cuda.cuMemsetD32(
+                    workspace_ptr, 0, device_workspace_size // 4)
             self.ptr_D = cuda.CUdeviceptr(workspace_ptr)
-        elif workspace_ptr is not None and self.gemm_mode == GemmUniversalMode.Gemm:
-            device_workspace = workspace_ptr
-
+        
         arguments = self.get_arguments()
 
         res_arg = self.operation.rt_module.get_args(
             ctypes.byref(arguments),
-            ctypes.c_void_p(int(device_workspace)),
             device_sm_count(),
             self.operation.rt_module.occupancy
         )
+
+        barrier_size = self.operation.rt_module.get_barrier_workspace_size(res_arg)
+        partials_size = self.operation.rt_module.get_partials_workspace_size(res_arg)
+        self.barrier_buffer = cutlass.memory_pool.device_mem_alloc(barrier_size)
+        if isinstance(self.barrier_buffer, TorchDeviceBuffer):
+            self.barrier_buffer.tensor.fill_(0)
+        else:
+            err, = cuda.cuMemsetD32(
+                self.barrier_buffer.ptr, 0, barrier_size // 4)
+        self.partials_buffer = cutlass.memory_pool.device_mem_alloc(partials_size)
+        self.operation.rt_module.init_workspace(
+            res_arg, 
+            ctypes.c_void_p(int(self.barrier_buffer.ptr)), 
+            ctypes.c_void_p(int(self.partials_buffer.ptr))
+        )
+
         host_workspace = bytearray(res_arg.contents)
 
         grid = self.operation.rt_module.get_grid_shape(
@@ -563,10 +574,13 @@ class GemmArguments3x(GemmArguments2x):
         device_workspace_size = self.operation.rt_module.get_device_workspace_size(self)
 
         if device_workspace_size > 0:
-            self.workspace_buffer = device_mem_alloc(device_workspace_size)
+            self.workspace_buffer = cutlass.memory_pool.device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
-            err, = cuda.cuMemsetD32(
-                workspace_ptr, 0, device_workspace_size // 4)
+            if isinstance(self.workspace_buffer, TorchDeviceBuffer):
+                self.workspace_buffer.tensor.fill_(0)
+            else:
+                err, = cuda.cuMemsetD32(
+                    workspace_ptr, 0, device_workspace_size // 4)
         else:
             workspace_ptr = None
 
@@ -742,16 +756,16 @@ class GemmGroupedArguments:
             )
             self.total_tiles += grid.x * grid.y * grid.z
 
-        self.problem_size_buffer = todevice(problem_size_host, np.int32)
-        self.ptr_A_buffer = todevice(self.ptr_A_host, np.int64)
-        self.ptr_B_buffer = todevice(self.ptr_B_host, np.int64)
-        self.ptr_C_buffer = todevice(self.ptr_C_host, np.int64)
-        self.ptr_D_buffer = todevice(self.ptr_D_host, np.int64)
+        self.problem_size_buffer = cutlass.memory_pool.todevice(problem_size_host, np.int32)
+        self.ptr_A_buffer = cutlass.memory_pool.todevice(self.ptr_A_host, np.int64)
+        self.ptr_B_buffer = cutlass.memory_pool.todevice(self.ptr_B_host, np.int64)
+        self.ptr_C_buffer = cutlass.memory_pool.todevice(self.ptr_C_host, np.int64)
+        self.ptr_D_buffer = cutlass.memory_pool.todevice(self.ptr_D_host, np.int64)
 
-        self.lda_buffer = todevice(lda_host, np.int64)
-        self.ldb_buffer = todevice(ldb_host, np.int64)
-        self.ldc_buffer = todevice(ldc_host, np.int64)
-        self.ldd_buffer = todevice(ldd_host, np.int64)
+        self.lda_buffer = cutlass.memory_pool.todevice(lda_host, np.int64)
+        self.ldb_buffer = cutlass.memory_pool.todevice(ldb_host, np.int64)
+        self.ldc_buffer = cutlass.memory_pool.todevice(ldc_host, np.int64)
+        self.ldd_buffer = cutlass.memory_pool.todevice(ldd_host, np.int64)
 
         if "output_op" in kwargs.keys():
             self.alpha = kwargs["output_op"].alpha
@@ -797,10 +811,13 @@ class GemmGroupedArguments:
         device_workspace_size = self.operation.rt_module.get_device_workspace_size(self)
 
         if device_workspace_size > 0:
-            self.workspace_buffer = device_mem_alloc(device_workspace_size)
+            self.workspace_buffer = cutlass.memory_pool.device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
-            err, = cuda.cuMemsetD32(
-                workspace_ptr, 0, device_workspace_size // 4)
+            if isinstance(self.workspace_buffer, TorchDeviceBuffer):
+                self.workspace_buffer.tensor.fill_(0)
+            else:
+                err, = cuda.cuMemsetD32(
+                    workspace_ptr, 0, device_workspace_size // 4)
         else:
             workspace_ptr = None
 
@@ -1005,6 +1022,7 @@ class GemmRTUniversalStreamK(GemmRTUniversal):
     """
 
     HostTemplate = r"""
+#include <tuple>
 extern "C" {
   // Get the size of params in bytes
   int ${operation_name}_get_param_size(){
@@ -1018,13 +1036,20 @@ extern "C" {
 
   using GemmType = ${operation_name}_base;
 
+  // Get the workspace size
+  size_t ${operation_name}_get_partials_workspace_size(GemmType::Params* params) {
+    return params->get_partials_workspace_size();
+  }
+
+  size_t ${operation_name}_get_barrier_workspace_size(GemmType::Params* params) {
+    return params->get_barrier_workspace_size();
+  }
+
   // Get the params as byte array
-  char* ${operation_name}_get_params(GemmType::Arguments* argument, int* workspace,
+  char* ${operation_name}_get_params(GemmType::Arguments* argument,
                                      int sm_count, int occupancy) {
     GemmType::Params* params;
     params = new GemmType::Params(*argument, sm_count, occupancy);
-
-    params->init_workspace(workspace);
 
     char *bytes = ((char*)(params));
     char *output = new char[sizeof(GemmType::Params)];
@@ -1032,6 +1057,12 @@ extern "C" {
         output[i] = bytes[i];
 
     return output;
+  }
+
+  // Update Workspace
+  void ${operation_name}_init_workspace(GemmType::Params* params, void* barrier_ptr, void* partials_ptr){
+    params->barrier_workspace = barrier_ptr;
+    params->partials_workspace = partials_ptr;
   }
 
   dim3 ${operation_name}_get_grid_shape(GemmType::Arguments* args, int device_sms, int sm_occupancy) {
@@ -1045,6 +1076,9 @@ extern "C" {
         super(GemmRTUniversalStreamK, self).__init__(operation)
         self.extra_funcs = {
             "get_grid_shape": GemmCoord_,
+            "get_partials_workspace_size": ctypes.c_int64,
+            "get_barrier_workspace_size": ctypes.c_int64,
+            "init_workspace": None
         }
         self._occupancy = None
         self.argument_type, self.epilogue_type  = get_gemm_arguments_streamk(operation.epilogue_functor)
@@ -1431,7 +1465,11 @@ ${operation_name}(${operation_name}${operation_suffix}::Params params) {
         problem_info_array = bytearray(problem_info.contents)
 
         # copy to device memory
-        return rmm.DeviceBuffer.to_device(problem_info_array).ptr
+        self.problem_info_device = cutlass.memory_pool.to_device(problem_info_array)
+        if isinstance(self.problem_info_device, rmm.DeviceBuffer):
+            return self.problem_info_device.ptr
+        else:
+            return self.problem_info_device.data_ptr()
 
     def plan(self, arguments):
         return LaunchConfiguration(
@@ -1519,7 +1557,7 @@ class GemmOperationBase:
             C_out = copy.deepcopy(C)
         return A_out, B_out, C_out
 
-    def run(self, arguments: GemmArguments) -> cuda.CUresult:
+    def run(self, arguments: GemmArguments, stream=cuda.CUstream(0)) -> cuda.CUresult:
         """
         Configure and launch the cuda kernel with input arguments
         """
@@ -1530,6 +1568,7 @@ class GemmOperationBase:
             arguments.host_workspace,
             arguments.device_workspace,
             arguments.launch_config,
+            stream
         )
 
         if err != cuda.CUresult.CUDA_SUCCESS:

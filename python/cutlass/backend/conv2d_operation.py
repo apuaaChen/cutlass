@@ -35,6 +35,7 @@ from typing import Union
 
 from cuda import cuda
 import numpy as np
+import cutlass
 
 from cutlass import (
     ConvKindNames,
@@ -61,7 +62,7 @@ from cutlass import (
     SwizzlingFunctorTag,
     get_complex_from_real,
 )
-
+from cutlass.backend.memory_manager import TorchDeviceBuffer
 from cutlass.backend.arguments import ArgumentBase
 from cutlass.backend.c_types import dim3_, get_conv2d_arguments
 from cutlass.backend.library import (
@@ -69,7 +70,6 @@ from cutlass.backend.library import (
     TensorDescription,
     TileDescription,
 )
-from cutlass.backend.memory_manager import device_mem_alloc
 from cutlass.backend.operation import ExecutableOperation, LaunchConfiguration
 from cutlass.backend.utils.datatypes import to_device_ptr
 from cutlass.backend.utils.software import CheckPackages, SubstituteTemplate
@@ -161,10 +161,13 @@ class Conv2dArguments(ArgumentBase):
         # Allocate and initialize device workspace
         device_workspace_size = self.operation.rt_module.get_workspace_size(self.c_arguments)
         if device_workspace_size > 0:
-            self.workspace_buffer = device_mem_alloc(device_workspace_size)
+            self.workspace_buffer = cutlass.memory_pool.device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
-            err, = cuda.cuMemsetD32(
-                workspace_ptr, 0, device_workspace_size // 4)
+            if isinstance(self.workspace_buffer, TorchDeviceBuffer):
+                self.workspace_buffer.tensor.fill_(0)
+            else:
+                err, = cuda.cuMemsetD32(
+                    workspace_ptr, 0, device_workspace_size // 4)
         else:
             workspace_ptr = None
 

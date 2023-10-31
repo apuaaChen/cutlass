@@ -33,7 +33,7 @@
 from cuda import cuda
 import numpy as np
 
-from cutlass.backend.memory_manager import device_mem_alloc, todevice
+import cutlass
 from cutlass.backend.utils.software import CheckPackages
 
 torch_available = CheckPackages().check_torch()
@@ -61,9 +61,9 @@ class NumpyFrontend:
         """
         # copy the data to device
         if is_output:
-            return device_mem_alloc(np_tensor.size * np_tensor.itemsize)
+            return cutlass.memory_pool.device_mem_alloc(np_tensor.size * np_tensor.itemsize)
         else:
-            return todevice(np_tensor)
+            return cutlass.memory_pool.todevice(np_tensor)
 
 
 class TorchFrontend:

@@ -146,4 +146,4 @@ from cutlass.op.gemm_grouped import GroupedGemm
 from cutlass.op.op import OperationBase
 from cutlass.backend.evt.ir.tensor import Tensor
 
-get_memory_pool(init_pool_size=2 ** 30, max_pool_size=2 ** 32)
+this.memory_pool = get_memory_pool(manager="torch", init_pool_size=2 ** 30, max_pool_size=2 ** 32)

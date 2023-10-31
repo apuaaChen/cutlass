@@ -33,7 +33,7 @@
 import re
 import sys
 
-from cutlass.backend.memory_manager import PoolMemoryManager
+from cutlass.backend.memory_manager import PoolMemoryManager, TorchMemoryManager
 
 
 class CheckPackages:
@@ -104,8 +104,10 @@ def device_sm_count():
     return _device_sm_count
 
 
-def get_memory_pool(init_pool_size=0, max_pool_size=2 ** 34):
-    memory_pool = PoolMemoryManager(
-        init_pool_size=init_pool_size, max_pool_size=max_pool_size
-    )
-    return memory_pool
+def get_memory_pool(manager="rmm", init_pool_size=0, max_pool_size=2 ** 34):
+    if manager == "rmm":
+        return PoolMemoryManager(
+            init_pool_size=init_pool_size, max_pool_size=max_pool_size
+        )
+    elif manager == "torch":
+        return TorchMemoryManager()

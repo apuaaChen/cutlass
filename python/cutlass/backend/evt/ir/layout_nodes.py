@@ -174,7 +174,7 @@ class ReshapeImpl:
                 new_dim = []
                 for d in dim:
                     new_dim.append(d * broadcast_factor[factor_idx])
-                    factor_idx += 1
+                factor_idx += 1
                 broadcast_split_input_shape.append(new_dim)
             else:
                 broadcast_split_input_shape.append(dim * broadcast_factor[factor_idx])

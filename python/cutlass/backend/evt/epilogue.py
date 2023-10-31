@@ -39,7 +39,7 @@ import ctypes
 from cuda import cuda
 import numpy as np
 
-from cutlass import DataType
+from cutlass import DataType, DataTypeSize
 from cutlass.backend.epilogue import EpilogueFunctorBase
 import cutlass.backend.evt.backend
 from cutlass.backend.frontend import TensorFrontend
@@ -63,7 +63,6 @@ class EpilogueFunctorVisitor(EpilogueFunctorBase):
 
         # Data types
         self.element_epilogue = element_compute # element compute
-        self.element_output = self.graph.get_node_meta('D').underlying_impl.element
 
         # Epilogue Thread Type
         epilogue_thread_type = self.visitor.epilogue_thread_type
@@ -72,6 +71,17 @@ class EpilogueFunctorVisitor(EpilogueFunctorBase):
             self.arg_d_type = self.visitor.arg_d_type
         output_names = self.visitor.return_names
         reduction_names = self.visitor.reduction_names
+
+        # Get element output
+        if cc == 90:
+            self.element_output = self.graph.get_node_meta('D').underlying_impl.element
+        else:
+            self.element_output = self.graph.get_node_meta(output_names[0]).underlying_impl.element
+            for idx in range(1, len(output_names)):
+                element_type = self.graph.get_node_meta(output_names[idx]).underlying_impl.element
+                if DataTypeSize[element_type] < DataTypeSize[self.element_output]:
+                    self.element_output = element_type
+
 
         # Epilogue stages specialized for sm80 kernel
         if cc == 80:
