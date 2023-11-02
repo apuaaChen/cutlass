@@ -298,6 +298,8 @@ public:
       return (size + CACHELINE_SIZE - 1) / CACHELINE_SIZE * CACHELINE_SIZE;
     }
 
+  public:
+
     /// Get the workspace size needed for barrier
     size_t get_barrier_workspace_size() const
     {
@@ -315,9 +317,6 @@ public:
       int sk_blocks = block_mapping.sk_regions() * block_mapping.sk_blocks_per_region();
       return cacheline_align_up(kWorkspaceBytesPerBlock * sk_blocks);
     }
-
-
-  public:
 
     //
     // Host dispatch API

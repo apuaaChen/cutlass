@@ -36,6 +36,7 @@ from cutlass.backend.evt.ir.layout_nodes import LayoutNode
 from cutlass.backend.evt.ir.load_nodes import (
     LoadNode,
     AccumulatorImpl,
+    RandImpl,
     LoadSrcImpl,
     AuxLoadImpl,
     RowBroadcastImpl,

@@ -177,7 +177,10 @@ class ReshapeImpl:
                 factor_idx += 1
                 broadcast_split_input_shape.append(new_dim)
             else:
-                broadcast_split_input_shape.append(dim * broadcast_factor[factor_idx])
+                try:
+                    broadcast_split_input_shape.append(dim * broadcast_factor[factor_idx])
+                except:
+                    breakpoint()
                 factor_idx += 1
         broadcast_split_input_shape = _list_to_tuple(broadcast_split_input_shape)
         node_meta.tensor.reshape(_list_to_tuple(split_input_shape))
@@ -267,6 +270,12 @@ class ReshapeImpl:
                 merged_shape.append(group[::-1])
             else:
                 raise NotImplementedError(f"Unsupported merge: {flatten_shape} -> {shape}")
+        # Corner case when batch = 1
+        if idx_flat >= 0:
+            if isinstance(merged_shape[-1], list):
+                merged_shape[-1] = [1] * (idx_flat + 1) + merged_shape[-1]
+            else:
+                merged_shape[-1] = [1] * (idx_flat + 1) + [merged_shape[-1]]
 
         return merged_shape[::-1]
 

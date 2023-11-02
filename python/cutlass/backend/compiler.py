@@ -154,6 +154,7 @@ class ArtifactManager:
             "-std=c++17",
             "--expt-relaxed-constexpr",
             "-Xcudafe --diag_suppress=esa_on_defaulted_function_ignored",
+            "--threads 4"
         ]
         self.nvcc()
         self.compiled_cache_device = {}
@@ -187,6 +188,7 @@ class ArtifactManager:
         cursor.execute(sqlite_fetch_blob_query, (op_key,))
         record = cursor.fetchall()
         if len(record) == 0:
+            connection.close()
             return False
         for row in record:
             key, cubin_image, host_binary, operation_name, op_attr = row
@@ -222,6 +224,7 @@ class ArtifactManager:
                     compiled_host_fns[attr] = func
 
             self.compiled_cache_host[key] = compiled_host_fns
+        connection.close()
         return True
 
     def emit_compile_(self, operation_list, compilation_options, host_compilation_options):

@@ -39,6 +39,7 @@ import ctypes
 from cutlass.backend.c_types import tuple_factory
 from cutlass.backend.epilogue import dtype2ctype, to_ctype_value
 from cutlass.backend.evt.ir.node import NodeBase, ImplBase
+from cutlass.backend import FunctionalOp
 
 
 class LoadImplBase(ImplBase):
@@ -62,6 +63,26 @@ class AccumulatorImpl(LoadImplBase):
     def match(node, problem_size: tuple):
         return node.name == "accum" and node.tensor.shape == problem_size
 
+
+class RandImpl(LoadImplBase):
+    """
+    Rand 0~1 node implementation
+    """
+    @property
+    def argument_type(self):
+        class _Argument(ctypes.Structure):
+            _fields_ = [
+                ("seed", ctypes.c_uint64),
+                ("offset", ctypes.c_uint64)
+            ]
+            def __init__(self, *args, **kwargs) -> None:
+                self.seed = 0
+                self.offset = 0
+        return _Argument
+
+    @staticmethod
+    def match(node, problem_size: tuple):
+        return hasattr(node, "fn") and node.fn == FunctionalOp.Rand
 
 class LoadSrcImpl(LoadImplBase):
     """
@@ -272,7 +293,7 @@ class LoadNode(NodeBase):
     """
     cnt = 0
     possible_impls = [
-        AccumulatorImpl, LoadSrcImpl, AuxLoadImpl,
+        AccumulatorImpl, RandImpl, LoadSrcImpl, AuxLoadImpl,
         RowBroadcastImpl, ColumnBroadcastImpl,
         ScalarBroadcastImpl
     ]

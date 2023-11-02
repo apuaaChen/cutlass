@@ -30,14 +30,42 @@
 #
 #################################################################################################
 
-from cutlass.backend.evt.passes.graph_drawer import EVTGraphDrawer
-from cutlass.backend.evt.passes.pass_argument_type import PassGetArgumentType
-from cutlass.backend.evt.passes.pass_dag_2_tree import PassDAG2Tree
-from cutlass.backend.evt.passes.pass_get_impl import PassGetImpl
-from cutlass.backend.evt.passes.pass_fix_element_d import PassFixElementD
-from cutlass.backend.evt.passes.pass_layout_elimination import PassLayoutManipulateElimination
-from cutlass.backend.evt.passes.pass_manager import EVTPassManager
-from cutlass.backend.evt.passes.pass_preprocess_red import PassPreprocessRed
-from cutlass.backend.evt.passes.pass_preprocess_load import PassPreprocessLoad
+"""
+Preprocess the load nodes
+
+Some of the nodes like rand-like and one-hot are parsed as compute node. This 
+pass fixes them and converts them back to a single load node
+"""
+
+from cutlass.backend.evt.passes.pass_manager import EVTPassBase
 from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
-from cutlass.backend.evt.passes.smem_size_calculator import GetSmemSize
+from cutlass.backend.evt.ir import ComputeNode, LoadNode
+from cutlass.backend.library import FunctionalOp
+from copy import deepcopy
+
+class PassPreprocessLoad(EVTPassBase):
+    """
+    Preprocess load nodes
+    """
+    dependencies = [PassShapeTypePropagation]
+
+    def call(self):
+        # Step 1: find the compute nodes with op == "Rand"
+        rand_nodes = []
+        for node_meta in self.dag_ir.nodes_meta:
+            if isinstance(node_meta, ComputeNode):
+                if node_meta.fn == FunctionalOp.Rand:
+                    rand_nodes.append(node_meta.name)
+        
+        # Step 2: for each compute, replacing it with an input node
+        for node in rand_nodes:
+            # insert a load node
+            name = f"{node}_load"
+            load_node = LoadNode(name)
+            load_node.tensor = {
+                "tensor": self.dag_ir.get_node_meta(node).tensor
+            }
+            setattr(load_node, "fn", FunctionalOp.Rand)
+            load_node.type_propagation()
+            self.dag_ir.add_node(load_node)
+            self.dag_ir.replace_all_uses_with(node, name)

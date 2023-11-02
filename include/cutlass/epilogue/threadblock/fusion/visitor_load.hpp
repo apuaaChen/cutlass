@@ -37,6 +37,8 @@
 
 #include "cutlass/epilogue/threadblock/fusion/visitor_2x.hpp"
 #include "cute/tensor.hpp"
+#include "curand.h"
+#include "curand_kernel.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -78,6 +80,91 @@ struct VisitorAccFetch : VisitorImpl2x<> {
     return Callbacks{};
   }
 };
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Random Operation
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<
+  class Element
+>
+struct VisitorRand {
+
+  struct SharedStorage { };
+
+  struct Arguments {
+    uint64_t seed;
+    uint64_t offset;
+  };
+
+  using Params = Arguments;
+
+  template <class ProblemShape>
+  static constexpr Params
+  to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
+    return args;
+  }
+
+  CUTLASS_HOST_DEVICE
+  VisitorRand() { }
+
+  CUTLASS_HOST_DEVICE
+  VisitorRand(Params const& params, SharedStorage const& shared_storage)
+      : params_ptr(&params) { }
+  
+  Params const* params_ptr;
+
+  struct Callbacks: EmptyCallbacks {
+    CUTLASS_DEVICE
+    Callbacks(
+      uint64_t seed,
+      uint64_t offset,
+      int thread_idx
+    ) {
+      curand_init(seed + offset, uint64_t(thread_idx), 0, &state);
+    }
+
+    curandStatePhilox4_32_10_t state;
+
+    template <class ElementAccumulator, int FragmentSize>
+    CUTLASS_DEVICE auto // returns an Array
+    visit(int iter_idx, int row_idx, int column_idx, int frg_idx, 
+          Array<ElementAccumulator, FragmentSize> const& frg_acc) {
+
+      Array<float, FragmentSize> rand;
+      float4* rand_ptr = reinterpret_cast<float4*>(rand.data());
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int i=0; i < FragmentSize; i+=4) {
+        *rand_ptr = curand_uniform4(&state);
+        rand_ptr ++;
+      }
+
+      Array<Element, FragmentSize> frg_rand;
+
+      using ConvertOutput = NumericArrayConverter<Element, float, FragmentSize>;
+      ConvertOutput convert_output{};
+
+      return convert_output(rand);
+    }
+
+  };
+
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape
+  ) {
+    return Callbacks(params_ptr->seed, params_ptr->offset, thread_idx);
+  }
+
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //

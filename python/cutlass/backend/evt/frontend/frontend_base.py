@@ -54,6 +54,7 @@ from cutlass.backend.evt.passes import (
     PassFixElementD,
     PassLayoutManipulateElimination,
     PassPreprocessRed,
+    PassPreprocessLoad,
     PassShapeTypePropagation,
 )
 from cutlass.backend.utils import device_cc
@@ -78,6 +79,7 @@ class EVTFrontendBase:
             self.dag_ir,
             [
                 PassPreprocessRed,
+                PassPreprocessLoad,
                 PassGetArgumentType,
                 PassShapeTypePropagation,
                 PassLayoutManipulateElimination,

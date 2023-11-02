@@ -35,6 +35,7 @@ from cutlass import DataTypeTag
 from cutlass.backend.evt.ir import (
     # Load Node
     AccumulatorImpl,
+    RandImpl,
     AuxLoadImpl,
     ColumnBroadcastImpl,
     LoadNode,
@@ -70,6 +71,19 @@ class Sm80AccumulatorImpl(AccumulatorImpl):
         self._type_decl = f"""\nusing {self.name_camel} = cutlass::epilogue::threadblock::VisitorAccFetch;\n"""
         return self._type_decl
 
+class Sm80RandImpl(RandImpl):
+
+    @property
+    def type_decl(self):
+        """
+        Return the string defining the type
+        """
+        if self._type_decl is not None:
+            return self._type_decl
+        
+        self._type_decl = f"""
+using {self.name_camel} = cutlass::epilogue::threadblock::VisitorRand<{DataTypeTag[self.element]}>;\n"""
+        return self._type_decl
 
 class Sm80AuxLoadImpl(AuxLoadImpl):
 

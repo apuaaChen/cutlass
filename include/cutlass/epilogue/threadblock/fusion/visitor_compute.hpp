@@ -107,3 +107,59 @@ struct VisitorCompute : VisitorImpl2x<> {
 } // namespace cutlass::epilogue::threadblock
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace cutlass{
+  template <typename T, int N>
+  struct greater_equal<Array<T, N>> {
+
+    using OutputConvert = NumericArrayConverter<T, bool, N>;
+
+    CUTLASS_HOST_DEVICE
+    Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
+
+      Array<bool, N> result;
+      greater_equal<T> scalar_op;
+
+      OutputConvert converter{};
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < N; ++i) {
+        result[i] = scalar_op(lhs[i], rhs[i]);
+      }
+
+      return converter(result);
+    }
+
+    CUTLASS_HOST_DEVICE
+    Array<T, N> operator()(Array<T, N> const &lhs, T const &scalar) const {
+
+      Array<bool, N> result;
+      greater_equal<T> scalar_op;
+
+      OutputConvert converter{};
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < N; ++i) {
+        result[i] = scalar_op(lhs[i], scalar);
+      }
+
+      return converter(result);
+    }
+
+    CUTLASS_HOST_DEVICE
+    Array<T, N> operator()( T const &scalar, Array<T, N> const &rhs) const {
+
+      Array<bool, N> result;
+      greater_equal<T> scalar_op;
+
+      OutputConvert converter{};
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < N; ++i) {
+        result[i] = scalar_op(scalar, rhs[i]);
+      }
+
+      return converter(result);
+    }
+  };
+} // namespace cutlass

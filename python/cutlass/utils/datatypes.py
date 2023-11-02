@@ -125,6 +125,7 @@ try:
         torch.int8: cutlass.DataType.s8,
         torch.int32: cutlass.DataType.s32,
         torch.uint8: cutlass.DataType.u8,
+        torch.bool: cutlass.DataType.s8,
     }
 
     _library_to_torch_dict = {
@@ -201,7 +202,10 @@ def _tensor_from_numpy(np_tensor):
 
 def _tensor_from_torch(pt_tensor):
     dtype = library_type(pt_tensor.dtype)
-    return (dtype, cutlass.LayoutType.RowMajor)
+    if pt_tensor.is_contiguous():
+        return (dtype, cutlass.LayoutType.RowMajor)
+    else:
+        return (dtype, cutlass.LayoutType.ColumnMajor)
 
 
 def get_datatype_and_layout(tensor):
