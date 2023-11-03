@@ -40,4 +40,5 @@ from cutlass.backend.evt.passes.pass_manager import EVTPassManager
 from cutlass.backend.evt.passes.pass_preprocess_red import PassPreprocessRed
 from cutlass.backend.evt.passes.pass_preprocess_load import PassPreprocessLoad
 from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
+from cutlass.backend.evt.passes.pass_sm80_rowmajor_output import PassSm80RowMajorOutputPass
 from cutlass.backend.evt.passes.smem_size_calculator import GetSmemSize

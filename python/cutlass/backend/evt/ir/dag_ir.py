@@ -57,6 +57,7 @@ class DAGIR:
         self.reduction_names = []
 
         self.cc = cc if cc else device_cc()
+        self.transposed = False
 
     #
     # IR manipulator

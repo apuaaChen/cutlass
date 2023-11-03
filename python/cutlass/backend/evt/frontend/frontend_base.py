@@ -53,6 +53,7 @@ from cutlass.backend.evt.passes import (
     PassGetImpl,
     PassFixElementD,
     PassLayoutManipulateElimination,
+    PassSm80RowMajorOutputPass,
     PassPreprocessRed,
     PassPreprocessLoad,
     PassShapeTypePropagation,
@@ -83,6 +84,7 @@ class EVTFrontendBase:
                 PassGetArgumentType,
                 PassShapeTypePropagation,
                 PassLayoutManipulateElimination,
+                PassSm80RowMajorOutputPass,
                 PassGetImpl,
                 PassDAG2Tree,
                 PassFixElementD

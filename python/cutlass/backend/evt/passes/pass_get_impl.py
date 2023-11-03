@@ -45,6 +45,7 @@ from cutlass.backend.evt.passes.pass_fix_element_d import PassFixElementD
 from cutlass.backend.evt.passes.pass_manager import EVTPassBase
 from cutlass.backend.evt.passes.pass_no_op_elimination import PassNoOpElimination
 from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
+from cutlass.backend.evt.passes.pass_sm80_rowmajor_output import PassSm80RowMajorOutputPass
 
 
 class PassGetImpl(EVTPassBase):
@@ -56,6 +57,7 @@ class PassGetImpl(EVTPassBase):
     """
     dependencies = [
         PassShapeTypePropagation,  # The shape and type info are required for inference
+        PassSm80RowMajorOutputPass,
         PassFixElementD
     ]
 
