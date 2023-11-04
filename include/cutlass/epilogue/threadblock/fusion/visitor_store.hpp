@@ -378,6 +378,128 @@ struct VisitorColReduction {
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+// Row vector store
+template <
+  class ThreadMap,
+  class ElementOutput,
+  class StrideMNL = Stride<_0,_1,_0>
+>
+struct VisitorRowStore {
+
+  using ShapeL = decltype(repeat_like(get<2>(StrideMNL{}), int32_t(0)));
+
+  struct Arguments {
+    ElementOutput* ptr_row = nullptr;
+    StrideMNL dRow = {};
+    ShapeL sRow = {};
+    ShapeL sMask = {};
+  };
+
+  using Params = Arguments;
+
+  template <class ProblemShape>
+  static constexpr Params
+  to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
+    if constexpr (!is_tuple<ShapeL>::value) {
+      return {args.ptr_row, args.dRow, get<2>(problem_shape)};
+    } else {
+      return args;
+    }
+  }
+
+  struct SharedStorage {};
+
+  static int constexpr vec_bits = ThreadMap::kElementsPerAccess * sizeof_bits<ElementOutput>::value;
+  using VecType = uint_bit_t<cute::min(128, vec_bits)>;
+  static int constexpr VecLength = sizeof(VecType) / sizeof(ElementOutput);
+
+  CUTLASS_HOST_DEVICE
+  VisitorRowStore() { }
+
+  CUTLASS_HOST_DEVICE
+  VisitorRowStore(Params const& params, SharedStorage const& shared_storage)
+    : params_ptr(&params) { }
+
+  Params const* params_ptr;
+
+  template <class GTensor, class CTensor, class ProblemShape>
+  struct Callbacks: EmptyCallbacks {
+    CUTLASS_DEVICE
+    Callbacks(
+      GTensor&& tC_gRow,
+      CTensor&& tC_cRow,
+      ProblemShape problem_shape,
+      Params const* params_ptr
+    ):
+      tC_gRow(cute::forward<GTensor>(tC_gRow)),
+      tC_cRow(cute::forward<CTensor>(tC_cRow)),
+      problem_shape(problem_shape),
+      mask({_1{}, get<1>(problem_shape), params_ptr->sMask}),
+      params_ptr(params_ptr) { }
+
+    GTensor tC_gRow;
+    CTensor tC_cRow;
+    Shape<int32_t, int32_t,ShapeL> mask;
+
+    Params const* params_ptr;
+    ProblemShape problem_shape;
+
+    template <class ElementAccumulator, class ElementInput, int FragmentSize>
+    CUTLASS_DEVICE auto
+    visit(int iter_idx, int row_idx, int column_idx, int frg_idx,
+          Array<ElementAccumulator, FragmentSize> const& frg_acc,
+          Array<ElementInput, FragmentSize> const frg_input) {
+      
+      bool guard = elem_less(tC_cRow(column_idx, row_idx, iter_idx), mask);
+      if (guard){
+          using ConvertInput = NumericArrayConverter<ElementOutput, ElementInput, FragmentSize>;
+          ConvertInput convert_input{};
+          Array<ElementOutput, FragmentSize> output_vec = convert_input(frg_input);
+          VecType* output_vec_ptr = reinterpret_cast<VecType*>(&output_vec);
+          cutlass::arch::global_store<VecType, sizeof(VecType)>(*output_vec_ptr, (void*)&tC_gRow(_0{}, column_idx), true);
+      }
+      
+      return frg_input;
+    }
+  };
+
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape
+  ) {
+    Tensor mRow = make_tensor(
+      make_gmem_ptr(params_ptr->ptr_row),
+      make_shape(get<0>(problem_shape), get<1>(problem_shape), params_ptr->sRow),
+      params_ptr->dRow
+    );
+
+    // VECTOR, FRAGMENT_COLUMN
+    Tensor tC_gRow = ThreadMap::partition(mRow, thread_idx, threadblock_tile_offset)(_,_,_0{},_0{},_0{},_0{});
+
+    // Generate the pred tensor
+    Tensor cRow = make_identity_tensor(mRow.shape());
+    // VECTOR, FRAGMENT_COLUM
+    Tensor tC_cRow = group_modes<2, 5>(
+      ThreadMap::partition(cRow, thread_idx, threadblock_tile_offset)(_0{},_,_,_,_,_));
+    
+    return Callbacks<
+      decltype(tC_gRow), decltype(tC_cRow),
+      ProblemShape>(
+      cute::move(tC_gRow),
+      cute::move(tC_cRow),
+      problem_shape,
+      params_ptr
+    );
+
+  }
+
+
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 // Row vector reduction
 template <
   template <class> class RegReduceFn,
