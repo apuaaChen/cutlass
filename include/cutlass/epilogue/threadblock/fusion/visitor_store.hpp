@@ -244,10 +244,12 @@ template <
 >
 struct VisitorColReduction {
 
+  using ShapeL = decltype(repeat_like(get<2>(StrideMNL{}), int32_t(0)));
   struct Arguments {
     ElementOutput* ptr_col = nullptr;
     ElementCompute reduction_identity = 0;
     StrideMNL dCol = {};
+    ShapeL sCol = {};
   };
 
   using Params = Arguments;
@@ -255,7 +257,11 @@ struct VisitorColReduction {
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    return args;
+    if constexpr (!is_tuple<ShapeL>::value) {
+      return {args.ptr_col, args.reduction_identity, args.dCol, get<2>(problem_shape)};
+    } else {
+      return args;
+    }
   }
 
   struct SharedStorage { };
@@ -346,7 +352,7 @@ struct VisitorColReduction {
 
     Tensor mCol = make_tensor(
       make_gmem_ptr(params_ptr->ptr_col),
-      problem_shape,
+      make_shape(get<0>(problem_shape), get<1>(problem_shape), params_ptr->sCol),
       params_ptr->dCol);
     // FRAGMENT_ROW, (ITERATION_ROW, ITERATION_GROUP, ITERATION_CLUSTER)
     Tensor tC_gCol = group_modes<1,4>(
@@ -384,10 +390,13 @@ template <
 >
 struct VisitorRowReduction {
 
+  using ShapeL = decltype(repeat_like(get<2>(StrideMNL{}), int32_t(0)));
+
   struct Arguments {
     ElementOutput* ptr_row = nullptr;
     ElementCompute reduction_identity = 0;
     StrideMNL dRow = {};
+    ShapeL sRow = {};
   };
 
   using Params = Arguments;
@@ -395,7 +404,12 @@ struct VisitorRowReduction {
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    return args;
+    if constexpr (!is_tuple<ShapeL>::value) {
+      return {args.ptr_row, args.reduction_identity, args.dRow, get<2>(problem_shape)};
+    } else {
+      return args;
+    }
+    
   }
 
   using SharedStorageShape = decltype(select<0,1,2,3,5,8,10>(typename ThreadMap::ThreadMapShape{}));
@@ -554,7 +568,7 @@ struct VisitorRowReduction {
   ) {
     Tensor mRow = make_tensor(
       make_gmem_ptr(params_ptr->ptr_row),
-      problem_shape,
+      make_shape(get<0>(problem_shape), get<1>(problem_shape), params_ptr->sRow),
       params_ptr->dRow);
     
     //
@@ -653,15 +667,14 @@ template <
   class StrideMNL = Stride<_0,_0,_0>
 >
 struct VisitorScalarReduction {
-  static_assert(
-    (cute::is_same_v<StrideMNL, Stride<_0,_0, _0>>) || // scalar reduction, e.g. tensor max element
-    (cute::is_same_v<StrideMNL, Stride<_0,_0, _1>>) || // batched scalar reduction, e.g. per-batch max element
-    (cute::is_same_v<StrideMNL, Stride<_0,_0,int>>));
+  static_assert(cute::is_same_v<decltype(take<0,2>(StrideMNL{})), Stride<_0,_0>>);
 
+  using ShapeL = decltype(repeat_like(get<2>(StrideMNL{}), int32_t(0)));
   struct Arguments {
     ElementOutput* ptr_scalar = nullptr;
     ElementCompute reduction_identity = 0;
     StrideMNL dScalar = {};
+    ShapeL sScalar = {};
   };
 
   using Params = Arguments;
@@ -669,7 +682,11 @@ struct VisitorScalarReduction {
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    return args;
+    if constexpr (!is_tuple<ShapeL>::value) {
+      return {args.ptr_scalar, args.reduction_identity, args.dScalar, get<2>(problem_shape)};
+    } else {
+      return args;
+    }
   }
 
   struct SharedStorage { };
@@ -747,7 +764,8 @@ struct VisitorScalarReduction {
     int thread_idx,
     ProblemShape problem_shape
   ) {
-    Tensor cSrc = make_identity_tensor(problem_shape);
+    Tensor cSrc = make_identity_tensor(
+      make_shape(get<0>(problem_shape), get<1>(problem_shape), params_ptr->sScalar));
     // FRAGMENT_COL, FRAGMENT_ROW, (ITERATION_ROW, ITERATION_GROUP, ITERATION_CLUSTER)
     Tensor tC_cSrc = group_modes<2,5>(
       ThreadMap::partition(cSrc, thread_idx, threadblock_tile_offset)(_0{},_,_,_,_,_)
@@ -755,7 +773,7 @@ struct VisitorScalarReduction {
 
     Tensor mScalar = make_tensor(
       make_gmem_ptr(params_ptr->ptr_scalar),
-      problem_shape,
+      make_shape(get<0>(problem_shape), get<1>(problem_shape), params_ptr->sScalar),
       params_ptr->dScalar
     );
 

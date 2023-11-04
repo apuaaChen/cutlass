@@ -289,10 +289,12 @@ template<
 >
 struct VisitorAuxLoad{
 
+  using ShapeL = decltype(repeat_like(get<2>(StrideMNL{}), int32_t(0)));
   struct Arguments {
     Element* ptr_aux = nullptr;
     Element null_default = Element(0);
     StrideMNL dAux = {};
+    ShapeL sAux = {};
   };
 
   using Params = Arguments;
@@ -300,7 +302,11 @@ struct VisitorAuxLoad{
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    return args;
+    if constexpr (!is_tuple<ShapeL>::value) {
+      return {args.ptr_aux, args.null_default, args.dAux, get<2>(problem_shape)};
+    } else {
+      return args;
+    }
   }
 
   // Software pipeline stages
@@ -375,7 +381,7 @@ struct VisitorAuxLoad{
   ) { 
     Tensor mAux = make_tensor(
       make_gmem_ptr(params_ptr->ptr_aux), 
-      problem_shape,
+      make_shape(get<0>(problem_shape), get<1>(problem_shape), params_ptr->sAux),
       params_ptr->dAux);   // (M,N,L)
     // VECTOR, FRAGMENT_COLUMN, FRAGMENT_ROW, ITERATION_ROW, ITERATION_GROUP, ITERATION_CLUSTER
     Tensor tC_gAux = recast<VecType>(
@@ -414,10 +420,12 @@ template<
 >
 struct VisitorRowBroadcast {
 
+  using ShapeL = decltype(repeat_like(get<2>(StrideMNL{}), int32_t(0)));
   struct Arguments {
     Element const* ptr_row = nullptr;
     Element null_default = Element(0);
     StrideMNL dRow = {};
+    ShapeL sRow = {};
   };
 
   using Params = Arguments;
@@ -425,7 +433,11 @@ struct VisitorRowBroadcast {
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    return args;
+    if constexpr (!is_tuple<ShapeL>::value) {
+      return {args.ptr_row, args.null_default, args.dRow, get<2>(problem_shape)};
+    } else {
+      return args;
+    }
   }
 
   struct SharedStorage {};
@@ -497,7 +509,7 @@ struct VisitorRowBroadcast {
   ) {
     Tensor mRow = make_tensor(
       make_gmem_ptr(params_ptr->ptr_row), 
-      problem_shape,
+      make_shape(get<0>(problem_shape), get<1>(problem_shape), params_ptr->sRow),
       params_ptr->dRow);
     
     // VECTOR, FRAGMENT_COLUMN
@@ -537,10 +549,12 @@ template<
 >
 struct VisitorColBroadcast {
 
+  using ShapeL = decltype(repeat_like(get<2>(StrideMNL{}), int32_t(0)));
   struct Arguments {
     Element const* ptr_col = nullptr;
     Element null_default = Element(0);
     StrideMNL dCol = {};
+    ShapeL sCol = {};
   };
 
   using Params = Arguments;
@@ -548,7 +562,11 @@ struct VisitorColBroadcast {
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    return args;
+    if constexpr (!is_tuple<ShapeL>::value) {
+      return {args.ptr_col, args.null_default, args.dCol, get<2>(problem_shape)};
+    } else {
+      return args;
+    }
   }
 
   struct SharedStorage { };
@@ -614,7 +632,7 @@ struct VisitorColBroadcast {
   ) {
     Tensor mCol = make_tensor(
       make_gmem_ptr(params_ptr->ptr_col),
-      problem_shape,
+      make_shape(get<0>(problem_shape), get<1>(problem_shape), params_ptr->sCol),
       params_ptr->dCol);
     
     // VECTOR, FRAGMENT_COLUMN, FRAGMENT_ROW, ITERATION_ROW, ITERATION_GROUP, ITERATION_CLUSTER

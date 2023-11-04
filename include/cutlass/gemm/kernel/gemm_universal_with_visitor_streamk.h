@@ -212,7 +212,7 @@ public:
       params_B(args.ldb ? make_Coord_with_padding<LayoutB::kStrideRank>(args.ldb) : args.stride_b),
       params_C(args.ldc ? make_Coord_with_padding<LayoutC::kStrideRank>(args.ldc) : args.stride_c),
       params_D(args.ldd ? make_Coord_with_padding<LayoutC::kStrideRank>(args.ldd) : args.stride_d),
-      output_op(FusionCallbacks::to_underlying_arguments(args.problem_size, args.epilogue, nullptr /*workspace*/)),
+      output_op(FusionCallbacks::to_underlying_arguments(problem_shape, args.epilogue, nullptr /*workspace*/)),
       mode(args.mode),
       ptr_A(const_cast<void *>(args.ptr_A)),
       ptr_B(const_cast<void *>(args.ptr_B)),
@@ -345,8 +345,9 @@ public:
       batch_stride_C = args.batch_stride_C;
       batch_stride_D = args.batch_stride_D;
 
-      output_op = FusionCallbacks::to_underlying_arguments(args.problem_size, args.epilogue, nullptr /*workspace*/);
       problem_shape = make_shape(args.problem_size.m(), args.problem_size.n(), args.batch_count);
+      output_op = FusionCallbacks::to_underlying_arguments(problem_shape, args.epilogue, nullptr /*workspace*/);
+      
     }
 
   };

@@ -54,6 +54,7 @@ class StoreImplBase(ImplBase):
         self.element = node.element
         self.element_output = node.element_output
         self.stride = node.store_tensor.stride
+        self.shape = node.store_tensor.shape
 
 
 class StoreDImpl(StoreImplBase):
@@ -120,6 +121,62 @@ class AuxStoreImpl(StoreImplBase):
             return False
 
 
+class RowStoreImpl(StoreImplBase):
+    def __init__(self, node) -> None:
+        super().__init__(node)
+    
+    def get_mask_l(self, shape, stride):
+        if isinstance(shape, tuple) and isinstance(stride, tuple):
+            return tuple(self.get_mask_l(sh, st) for sh, st in zip(shape, stride))
+        else:
+            if stride == 0:
+                return 1
+            else:
+                return shape
+
+    @property
+    def argument_type(self):
+        stride_mnl = self.get_stride_mnl()
+        shape_l = self.get_shape_l()
+        # Get mask
+        stride_l = tuple(stride_mnl[2:])
+        mask_l = self.get_mask_l(shape_l, stride_l)
+        name = self.name
+        stride_tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
+        shape_tuple_type = tuple_factory(shape_l, "int")
+        class _Argument(ctypes.Structure):
+            _fields_ = [
+                ("ptr", ctypes.c_void_p),
+                ("dMNL", stride_tuple_type),
+                ("sL", shape_tuple_type),
+                ("sMask", shape_tuple_type),
+            ]
+            def __init__(self, kwargs) -> None:
+                ptr = kwargs[name]
+                self.ptr = ptr
+                self.dMNL = stride_tuple_type(stride_mnl)
+                self.sL = shape_tuple_type(shape_l)
+                self.sMask = shape_tuple_type(mask_l)
+
+        return _Argument
+
+    @staticmethod
+    def match(node, problem_size: tuple):
+        if not node.is_output:
+            return False
+        if node.name in StoreImplBase.reserved_names:
+            return False
+        if hasattr(node, "reg_reduce_fn"):
+            return False
+
+        strideMN = node.store_tensor.stride[-2:]
+        if strideMN == (0, 1):
+            return True
+        else:
+            return False
+
+
+
 class ReductionImplBase(StoreImplBase):
     def __init__(self, node) -> None:
         super().__init__(node)
@@ -163,21 +220,25 @@ class ReductionImplBase(StoreImplBase):
     def argument_type(self):
         self.get_reduce_identity()
         stride_mnl = self.get_stride_mnl()
+        shape_l = self.get_shape_l()
         name = self.name
-        tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
+        stride_tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
+        shape_tuple_type = tuple_factory(shape_l, "int")
         element_compute = self.element_compute
         reduce_identity = self.get_reduce_identity()
         class _Argument(ctypes.Structure):
             _fields_ = [
                 ("ptr", ctypes.c_void_p),
                 ("reduce_identity", dtype2ctype[element_compute]),
-                ("dMNL", tuple_type)
+                ("dMNL", stride_tuple_type),
+                ("sL", shape_tuple_type)
             ]
             def __init__(self, kwargs) -> None:
                 ptr = kwargs[name]
                 self.ptr = ptr
                 self.reduce_identity = reduce_identity
-                self.dMNL = tuple_type(stride_mnl)
+                self.dMNL = stride_tuple_type(stride_mnl)
+                self.sL = shape_tuple_type(shape_l)
 
         return _Argument
 
@@ -189,6 +250,8 @@ class ColumnReductionImpl(ReductionImplBase):
         if not node.is_output:
             return False
         if node.name in StoreImplBase.reserved_names:
+            return False
+        if not hasattr(node, "reg_reduce_fn"):
             return False
 
         strideMN = node.store_tensor.stride[-2:]
@@ -206,6 +269,8 @@ class RowReductionImpl(ReductionImplBase):
             return False
         if node.name in StoreImplBase.reserved_names:
             return False
+        if not hasattr(node, "reg_reduce_fn"):
+            return False
 
         strideMN = node.store_tensor.stride[-2:]
         if strideMN == (0, 1):
@@ -222,6 +287,8 @@ class ScalarReductionImpl(ReductionImplBase):
             return False
         if node.name in StoreImplBase.reserved_names:
             return False
+        if not hasattr(node, "reg_reduce_fn"):
+            return False
 
         strideMN = node.store_tensor.stride[-2:]
         if strideMN == (0, 0):
@@ -237,7 +304,7 @@ class StoreNode(NodeBase):
     possible_impls = [
         AuxStoreImpl, RowReductionImpl,
         ColumnReductionImpl, ScalarReductionImpl,
-        NoOpImpl, StoreDImpl
+        NoOpImpl, StoreDImpl, RowStoreImpl
     ]
     def __init__(self, name: str) -> None:
         super().__init__(name)

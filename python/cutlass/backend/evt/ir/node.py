@@ -124,6 +124,13 @@ class ImplBase:
         """
         stride = _list_to_tuple([self.stride[-2], self.stride[-1]] + list(_reverse_tuple(tuple(self.stride[:-2]))))
         return stride
+    
+    def get_shape_l(self):
+        """
+        Get the shape l. This is used in argument construction
+        """
+        shapel = _reverse_tuple(tuple(self.shape[:-2]))
+        return shapel
 
     def get_smem_size(self, *args, **kwargs):
         """

@@ -78,9 +78,10 @@ class EpilogueFunctorVisitor(EpilogueFunctorBase):
         else:
             self.element_output = self.graph.get_node_meta(output_names[0]).underlying_impl.element
             for idx in range(1, len(output_names)):
-                element_type = self.graph.get_node_meta(output_names[idx]).underlying_impl.element
-                if DataTypeSize[element_type] < DataTypeSize[self.element_output]:
-                    self.element_output = element_type
+                if self.graph.has_node(output_names[idx]):
+                    element_type = self.graph.get_node_meta(output_names[idx]).underlying_impl.element
+                    if DataTypeSize[element_type] < DataTypeSize[self.element_output]:
+                        self.element_output = element_type
 
 
         # Epilogue stages specialized for sm80 kernel

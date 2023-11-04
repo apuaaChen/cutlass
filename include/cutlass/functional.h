@@ -547,6 +547,19 @@ struct atomic_add<half2>
   }
 };
 
+template<>
+struct atomic_add<half_t>
+{
+  CUTLASS_DEVICE
+  void operator()(half_t *ptr, const half_t &data)
+  {
+#if defined(__CUDA_ARCH__)
+    atomicAdd(reinterpret_cast<__half*>(ptr), __half(data));
+#endif
+  }
+};
+
+
 template <typename T>
 using red [[deprecated("use atomic_add instead")]] = atomic_add<T>;
 

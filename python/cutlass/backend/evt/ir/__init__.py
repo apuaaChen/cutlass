@@ -50,5 +50,6 @@ from cutlass.backend.evt.ir.store_nodes import (
     AuxStoreImpl,
     ColumnReductionImpl,
     RowReductionImpl,
-    ScalarReductionImpl
+    ScalarReductionImpl,
+    RowStoreImpl
 )

@@ -52,6 +52,7 @@ class LoadImplBase(ImplBase):
         self.element = node.element
         self.element_output = node.element_output
         self.stride = node.tensor.stride
+        self.shape = node.tensor.shape
 
 
 class AccumulatorImpl(LoadImplBase):
@@ -119,20 +120,24 @@ class AuxLoadImpl(LoadImplBase):
     @property
     def argument_type(self):
         stride_mnl = self.get_stride_mnl()
+        shape_l = self.get_shape_l()
         name = self.name
-        tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
+        stride_tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
+        shape_tuple_type = tuple_factory(shape_l, "int")
         element_type = self.element
         class _Argument(ctypes.Structure):
             _fields_ = [
                 ("ptr_aux", ctypes.c_void_p),
                 ("null_default", dtype2ctype[element_type]),
-                ("dAux", tuple_type)
+                ("dAux", stride_tuple_type),
+                ("sL", shape_tuple_type)
             ]
             def __init__(self, kwargs) -> None:
                 ptr = kwargs[name]
                 self.ptr_aux = ptr
                 self.null_default = to_ctype_value(0, element_type)
-                self.dAux = tuple_type(stride_mnl)
+                self.dAux = stride_tuple_type(stride_mnl)
+                self.sL = shape_tuple_type(shape_l)
 
         return _Argument
 
@@ -159,20 +164,24 @@ class RowBroadcastImpl(LoadImplBase):
     @property
     def argument_type(self):
         stride_mnl = self.get_stride_mnl()
+        shape_l = self.get_shape_l()
         name = self.name
-        tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
+        stride_tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
+        shape_tuple_type = tuple_factory(shape_l, "int")
         element_type = self.element
         class _Argument(ctypes.Structure):
             _fields_ = [
                 ("ptr_row", ctypes.c_void_p),
                 ("null_default", dtype2ctype[element_type]),
-                ("dRow", tuple_type)
+                ("dRow", stride_tuple_type),
+                ("sL", shape_tuple_type)
             ]
             def __init__(self, kwargs) -> None:
                 ptr = kwargs[name]
                 self.ptr_row = ptr
                 self.null_default = to_ctype_value(0, element_type)
-                self.dRow = tuple_type(stride_mnl)
+                self.dRow = stride_tuple_type(stride_mnl)
+                self.sL = shape_tuple_type(shape_l)
 
         return _Argument
 
@@ -199,20 +208,24 @@ class ColumnBroadcastImpl(LoadImplBase):
     @property
     def argument_type(self):
         stride_mnl = self.get_stride_mnl()
+        shape_l = self.get_shape_l()
         name = self.name
-        tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
+        stride_tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
+        shape_tuple_type = tuple_factory(shape_l, "int")
         element_type = self.element
         class _Argument(ctypes.Structure):
             _fields_ = [
                 ("ptr_col", ctypes.c_void_p),
                 ("null_default", dtype2ctype[element_type]),
-                ("dCol", tuple_type)
+                ("dCol", stride_tuple_type),
+                ("sL", shape_tuple_type)
             ]
             def __init__(self, kwargs) -> None:
                 ptr = kwargs[name]
                 self.ptr_col = int(ptr)
                 self.null_default = to_ctype_value(0, element_type)
-                self.dCol = tuple_type(stride_mnl)
+                self.dCol = stride_tuple_type(stride_mnl)
+                self.sL = shape_tuple_type(shape_l)
 
         return _Argument
 

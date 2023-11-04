@@ -48,7 +48,8 @@ from cutlass.backend.evt.ir import (
     AuxStoreImpl,
     ColumnReductionImpl,
     RowReductionImpl,
-    ScalarReductionImpl
+    ScalarReductionImpl,
+    RowStoreImpl
 )
 
 from cutlass.backend.library import (
@@ -266,6 +267,25 @@ using {self.name_camel} = cutlass::epilogue::threadblock::VisitorScalarReduction
     {op_tag(self.reg_reduce_fn)}, {op_tag(self.gmem_reduce_fn)},
     OutputTileThreadMap, {DataTypeTag[self.element]},
     {DataTypeTag[self.element_compute]}, {FloatRoundStyleTag[self.round_style]},
+    {self.stride_mnl}
+>;
+"""
+        return self._type_decl
+    
+
+class Sm80RowStoreImpl(RowStoreImpl):
+
+    @property
+    def type_decl(self):
+        """
+        Return the string defining the type
+        """
+        if self._type_decl is not None:
+            return self._type_decl
+
+        self._type_decl = f"""
+using {self.name_camel} = cutlass::epilogue::threadblock::VisitorRowStore<
+    OutputTileThreadMap, {DataTypeTag[self.element]},
     {self.stride_mnl}
 >;
 """

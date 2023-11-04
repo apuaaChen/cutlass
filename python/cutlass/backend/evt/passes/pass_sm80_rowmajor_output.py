@@ -74,8 +74,11 @@ class PassSm80RowMajorOutputPass(EVTPassBase):
                 output_layouts.add(LayoutType.RowMajor)
             else:
                 output_layouts.add(LayoutType.ColumnMajor)
+
+        if len(output_layouts) < 1:
+            return
         
-        if len(output_layouts) != 1:
+        if len(output_layouts) > 1:
             raise NotImplementedError("Got both RowMajor and ColumnMajor outputs")
         
         layout = list(output_layouts)[0]

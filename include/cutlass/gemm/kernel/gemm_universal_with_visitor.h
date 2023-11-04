@@ -135,8 +135,8 @@ public:
       ParamsBase(args, device_sms, sm_occupancy),
       params_A(args.lda ? make_Coord_with_padding<LayoutA::kStrideRank>(args.lda) : args.stride_a),
       params_B(args.ldb ? make_Coord_with_padding<LayoutB::kStrideRank>(args.ldb) : args.stride_b),
-      output_op(FusionCallbacks::to_underlying_arguments(args.problem_size, args.epilogue, nullptr /*workspace*/)),
       problem_shape({args.problem_size.m(), args.problem_size.n(), args.batch_count}),
+      output_op(FusionCallbacks::to_underlying_arguments(problem_shape, args.epilogue, nullptr /*workspace*/)),
       ptr_A(const_cast<void *>(args.ptr_A)),
       ptr_B(const_cast<void *>(args.ptr_B)),
       batch_stride_A(args.batch_stride_A),
@@ -167,8 +167,8 @@ public:
       ptr_gather_A_indices = const_cast<int *>(args.ptr_gather_A_indices);
       ptr_gather_B_indices = const_cast<int *>(args.ptr_gather_B_indices);
 
-      output_op = FusionCallbacks::to_underlying_arguments(args.problem_size, args.epilogue, nullptr /*workspace*/);
       problem_shape = make_shape(args.problem_size.m(), args.problem_size.n(), args.batch_count);
+      output_op = FusionCallbacks::to_underlying_arguments(problem_shape, args.epilogue, nullptr /*workspace*/);
     }
   };
 

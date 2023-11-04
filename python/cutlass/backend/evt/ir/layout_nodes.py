@@ -155,17 +155,34 @@ class ReshapeImpl:
         broadcast_factor = []
         for dim, old_dim in zip(shape, split_output_shape):
             if not isinstance(dim, list):
-                dim = [dim,]
+                if isinstance(dim, tuple):
+                    dim = list(dim)
+                else:
+                    dim = [dim,]
             if not isinstance(old_dim, list):
-                old_dim = [old_dim,]
+                if isinstance(old_dim, tuple):
+                    old_dim = list(old_dim)
+                else:
+                    old_dim = [old_dim,]
             if product(tuple(dim)) == product(tuple(old_dim)):
-                broadcast_factor += [1] * len(old_dim)
+                broadcast_factor += [1] * max(len(old_dim), len(dim))
             elif product(tuple(old_dim)) == 1:
                 assert len(dim) == 1
                 broadcast_factor.append(dim[0])
+            # Special tuple broadcast case
+            elif isinstance(dim, list):
+                is_tuple_broadcast = True
+                for od in old_dim:
+                    if od not in dim:
+                        is_tuple_broadcast = False
+                        break
+                if is_tuple_broadcast:
+                    broadcast_factor.append(dim)
+                else:
+                    raise NotImplementedError(f"Invalid Broadcast: {old_dim} -> {dim}")
             else:
                 raise NotImplementedError(f"Invalid Broadcast: {old_dim} -> {dim}")
-
+    
         # flatten_split_shape -> split_input_shape
         factor_idx = 0
         broadcast_split_input_shape = []
@@ -173,8 +190,11 @@ class ReshapeImpl:
             if isinstance(dim, list):
                 new_dim = []
                 for d in dim:
-                    new_dim.append(d * broadcast_factor[factor_idx])
-                factor_idx += 1
+                    if isinstance(broadcast_factor[factor_idx], list) and d in broadcast_factor[factor_idx]:
+                        new_dim.append(broadcast_factor[factor_idx])
+                    else:
+                        new_dim.append(d * broadcast_factor[factor_idx])
+                    factor_idx += 1
                 broadcast_split_input_shape.append(new_dim)
             else:
                 try:
