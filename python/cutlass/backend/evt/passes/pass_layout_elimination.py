@@ -39,6 +39,7 @@ from copy import deepcopy
 from cutlass.backend.evt.ir import DAGIR, LayoutNode
 from cutlass.backend.evt.passes.pass_manager import EVTPassBase
 from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
+from cutlass.epilogue.evt_ops import permute, reshape
 
 
 class PassLayoutManipulateElimination(EVTPassBase):
@@ -89,7 +90,7 @@ class PassLayoutManipulateElimination(EVTPassBase):
         elif "accum" not in nodes_influenced_dir_users and "accum" in nodes_influenced_dir_inputs:
             return "users"
         else:
-            raise RuntimeError("Unsolved propagation direction")
+            return "inputs"
 
     # Get all influenced nodes if we propagate along the user direction
     def get_influenced_users(self, node: str):
@@ -162,29 +163,31 @@ class PassLayoutManipulateElimination(EVTPassBase):
         """
         if node in self.visited:
             # Avoid applying twice
-            return
+            return False
         self.visited.append(node)
 
         node_meta = self.dag_ir.get_node_meta(node)
         if layout_node_meta.name != node:
             if isinstance(node_meta, LayoutNode):
                 # Layout node is not transparent with layout node
+                # Special case for the same shape reshape
+                if node_meta.fn == reshape and layout_node_meta.fn == reshape:
+                    if node_meta.kwargs["new_shape"] == layout_node_meta.kwargs["new_shape"]:
+                        return False
                 self.add_copy_before(layout_node_meta, node)
-                return
+                return False
             else:
                 layout_node_meta.apply_to_user(node_meta)
 
         users = self.dag_ir.get_users(node)
-        user_inputs = []
         for user in users:
-            user_inputs.append(set(self.dag_ir.get_all_inputs(user)))
-        for user in users:
-            self.propagate_to_users(layout_node_meta, user)
-        if len(user_inputs) > 0:
-            user_inputs = set.union(*user_inputs)
-            user_inputs.remove(node)
+            applied_to_user = self.propagate_to_users(layout_node_meta, user)
+            if not applied_to_user:
+                continue
+            user_inputs = set(self.dag_ir.get_all_inputs(user))
             for input in user_inputs:
                 self.propagate_to_inputs(layout_node_meta.get_inverse_node(), input)
+        return True
 
     # Propagate the layout `node` along the input direction
     def propagate_to_inputs(self, layout_node_meta: LayoutNode, node: str):
@@ -193,7 +196,7 @@ class PassLayoutManipulateElimination(EVTPassBase):
         """
         if node in self.visited:
             # Avoid applying twice
-            return
+            return False
         self.visited.append(node)
 
         node_meta = self.dag_ir.get_node_meta(node)
@@ -201,17 +204,15 @@ class PassLayoutManipulateElimination(EVTPassBase):
             if isinstance(node_meta, LayoutNode):
                 # Layout node is not transparent with layout node
                 self.add_copy_after(layout_node_meta, node)
-                return
+                return False
             else:
                 layout_node_meta.apply_to_input(node_meta)
         inputs = self.dag_ir.get_all_inputs(node)
-        input_users = []
         for input in inputs:
-            input_users.append(set(self.dag_ir.get_users(input)))
-        for input in inputs:
-            self.propagate_to_inputs(layout_node_meta, input)
-        if len(input_users) > 0:
-            input_users = set.union(*input_users)
+            applied_to_input = self.propagate_to_inputs(layout_node_meta, input)
+            if not applied_to_input: continue
+            input_users = set(self.dag_ir.get_users(input))
             input_users.remove(node)
             for user in input_users:
                 self.propagate_to_users(layout_node_meta.get_inverse_node(), user)
+        return True

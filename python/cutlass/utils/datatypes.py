@@ -126,6 +126,7 @@ try:
         torch.int32: cutlass.DataType.s32,
         torch.uint8: cutlass.DataType.u8,
         torch.bool: cutlass.DataType.s8,
+        torch.int64: cutlass.DataType.s64
     }
 
     _library_to_torch_dict = {
@@ -139,6 +140,7 @@ try:
         cutlass.DataType.s8: torch.int8,
         cutlass.DataType.s32: torch.int32,
         cutlass.DataType.u8: torch.uint8,
+        cutlass.DataType.s64: torch.int64
     }
 except ImportError:
     torch_available = False

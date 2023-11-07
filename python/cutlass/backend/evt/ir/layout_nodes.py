@@ -117,6 +117,10 @@ class PermutationImpl:
             if input_meta.store_tensor is not None:
                 input_meta.store_tensor.permute(self.indices)
 
+class rhsDimBroadcast:
+    def __init__(self, key_len, dims) -> None:
+        self.dims = dims
+        self.key_len = key_len
 
 class ReshapeImpl:
     """
@@ -171,13 +175,8 @@ class ReshapeImpl:
                 broadcast_factor.append(dim[0])
             # Special tuple broadcast case
             elif isinstance(dim, list):
-                is_tuple_broadcast = True
-                for od in old_dim:
-                    if od not in dim:
-                        is_tuple_broadcast = False
-                        break
-                if is_tuple_broadcast:
-                    broadcast_factor.append(dim)
+                if product(tuple(old_dim)) == dim[0]:
+                    broadcast_factor.append(rhsDimBroadcast(len(old_dim), dim[1:]))
                 else:
                     raise NotImplementedError(f"Invalid Broadcast: {old_dim} -> {dim}")
             else:
@@ -190,18 +189,32 @@ class ReshapeImpl:
             if isinstance(dim, list):
                 new_dim = []
                 for d in dim:
-                    if isinstance(broadcast_factor[factor_idx], list) and d in broadcast_factor[factor_idx]:
-                        new_dim.append(broadcast_factor[factor_idx])
+                    if isinstance(broadcast_factor[factor_idx], rhsDimBroadcast):
+                        if broadcast_factor[factor_idx].key_len > 1:
+                            new_dim.append(dim)
+                            broadcast_factor[factor_idx].key_len -= 1
+                        else:
+                            new_dim.append([
+                                [dim] + broadcast_factor[factor_idx].dims
+                            ])
+                            factor_idx += 1
                     else:
                         new_dim.append(d * broadcast_factor[factor_idx])
-                    factor_idx += 1
+                        factor_idx += 1
                 broadcast_split_input_shape.append(new_dim)
             else:
-                try:
+                if isinstance(broadcast_factor[factor_idx], rhsDimBroadcast):
+                    if broadcast_factor[factor_idx].key_len > 1:
+                        broadcast_split_input_shape.append(dim)
+                        broadcast_factor[factor_idx].key_len -= 1
+                    else:
+                        broadcast_split_input_shape.append([
+                            [dim] + broadcast_factor[factor_idx].dims
+                        ])
+                        factor_idx += 1
+                else:
                     broadcast_split_input_shape.append(dim * broadcast_factor[factor_idx])
-                except:
-                    breakpoint()
-                factor_idx += 1
+                    factor_idx += 1
         broadcast_split_input_shape = _list_to_tuple(broadcast_split_input_shape)
         node_meta.tensor.reshape(_list_to_tuple(split_input_shape))
         node_meta.tensor.broadcast(broadcast_split_input_shape)

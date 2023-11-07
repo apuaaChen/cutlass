@@ -143,7 +143,7 @@ class RowStoreImpl(StoreImplBase):
         mask_l = self.get_mask_l(shape_l, stride_l)
         name = self.name
         stride_tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
-        shape_tuple_type = tuple_factory(shape_l, "int")
+        shape_tuple_type = tuple_factory(shape_l, "int", constants=[])
         class _Argument(ctypes.Structure):
             _fields_ = [
                 ("ptr", ctypes.c_void_p),
@@ -223,7 +223,7 @@ class ReductionImplBase(StoreImplBase):
         shape_l = self.get_shape_l()
         name = self.name
         stride_tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
-        shape_tuple_type = tuple_factory(shape_l, "int")
+        shape_tuple_type = tuple_factory(shape_l, "int", constants=[])
         element_compute = self.element_compute
         reduce_identity = self.get_reduce_identity()
         class _Argument(ctypes.Structure):

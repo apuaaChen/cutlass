@@ -30,7 +30,7 @@
 #
 #################################################################################################
 
-from cutlass.backend.evt.ir.compute_nodes import ComputeNode, ComputeImpl
+from cutlass.backend.evt.ir.compute_nodes import ComputeNode, ComputeImpl, OneHotImpl
 from cutlass.backend.evt.ir.dag_ir import DAGIR
 from cutlass.backend.evt.ir.layout_nodes import LayoutNode
 from cutlass.backend.evt.ir.load_nodes import (

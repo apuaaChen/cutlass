@@ -46,7 +46,8 @@ dtype2ctype = {
     DataType.f32: ctypes.c_float,
     DataType.f64: ctypes.c_double,
     DataType.s8: ctypes.c_int8,
-    DataType.s32: ctypes.c_int32
+    DataType.s32: ctypes.c_int32,
+    DataType.s64: ctypes.c_int64
 }
 
 torch_available = CheckPackages().check_torch()

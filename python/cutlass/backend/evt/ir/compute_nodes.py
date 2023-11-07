@@ -35,7 +35,9 @@ Python registration for compute nodes in EVT
 """
 
 from cutlass.backend.evt.ir.node import NodeBase, ImplBase
-from cutlass.backend.library import FloatRoundStyle
+from cutlass.backend.library import FloatRoundStyle, FunctionalOp
+from cutlass.backend.evt.ir.tensor import Tensor
+from cutlass import LayoutType
 
 
 class ComputeImplBase(ImplBase):
@@ -44,6 +46,23 @@ class ComputeImplBase(ImplBase):
     """
     def __init__(self, node) -> None:
         super().__init__(node)
+
+
+class OneHotImpl(ComputeImplBase):
+    """
+    Implementation for OneHot Node
+    """
+    def __init__(self, node) -> None:
+        super().__init__(node)
+
+        self.fn = node.fn
+        self.element_output = node.element_output
+        self.element_compute = node.element_compute
+        self.round_style = node.round_style
+    
+    @staticmethod
+    def match(node, problem_size):
+        return node.fn == FunctionalOp.OneHot
 
 
 class ComputeImpl(ComputeImplBase):
@@ -68,6 +87,7 @@ class ComputeNode(NodeBase):
     Compute Node in DAG IR
     """
     possible_impls = [
+        OneHotImpl,
         ComputeImpl
     ]
     def __init__(
@@ -79,6 +99,16 @@ class ComputeNode(NodeBase):
         self.fn = fn
         self.element_compute = element_compute
         self.round_style = round_style
+    
+    def shape_propagation(self, input_node_metas):
+        if self.fn == FunctionalOp.OneHot:
+            assert len(input_node_metas) == 1
+            shape = input_node_metas[0].tensor.shape
+            assert hasattr(self, "num_classes")
+            out_shape = shape[:-1] + (getattr(self, "num_classes"),)
+            self._tensor = Tensor(element=self.element_compute, shape=out_shape, layout_tag=LayoutType.RowMajor)
+        else:
+            return super().shape_propagation(input_node_metas)
 
     def type_propagation(self, *args, **kwargs):
         """

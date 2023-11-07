@@ -132,6 +132,8 @@ class FunctionalOp(enum.Enum):
     Plus = enum_auto()
     GreaterEqual = enum_auto()
     Rand = enum_auto()
+    OneHot = enum_auto()
+    Ne = enum_auto()
 
 FunctionalOpTag = {
     FunctionalOp.AtomicAdd: "cutlass::atomic_add",
@@ -143,7 +145,8 @@ FunctionalOpTag = {
     FunctionalOp.Multiplies: "cutlass::multiplies",
     FunctionalOp.MultiplyAdd: "cutlass::multiply_add",
     FunctionalOp.Plus: "cutlass::plus",
-    FunctionalOp.GreaterEqual: "cutlass::greater_equal"
+    FunctionalOp.GreaterEqual: "cutlass::greater_equal",
+    FunctionalOp.Ne: "cutlass::ne"
 }
 
 

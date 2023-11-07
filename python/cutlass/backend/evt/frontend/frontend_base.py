@@ -75,6 +75,7 @@ class EVTFrontendBase:
         self.dag_ir = DAGIR(self.element_compute, self.cc)
         self.compute_cnt = 0
         self.layout_cnt = 0
+        self.imm_counter = 0
 
         self.pass_manager = EVTPassManager(
             self.dag_ir,
@@ -129,6 +130,9 @@ class EVTFrontendBase:
 
     def add_edge(self, src, tgt, weight=0):
         self.dag_ir.add_edge(src, tgt, weight=weight)
+    
+    def remove_edge(self, src, tgt):
+        self.dag_ir.remove_edge(src, tgt)
 
     def set_tensor(self, node_name, example):
         """
@@ -191,13 +195,14 @@ class EVTFrontendBase:
         except:
             raise ValueError(f"{type(value).__name__} cannot be converted to float.")
 
-        name = f"imm_{value}".replace('.', '_')
+        name = f"imm_{value}_{self.imm_counter}".replace('.', '_')
         load_node = LoadNode(name)
+        self.imm_counter += 1
         load_node.tensor = {"tensor": value, "is_constant": True}
         self.add_node(load_node)
         return name
 
-    def add_compute_node(self, op, name=None):
+    def add_compute_node(self, op, name=None, **kwargs):
         """
         Add a compute node.
         :param op: the computation op
@@ -212,6 +217,8 @@ class EVTFrontendBase:
             name=name, fn=op,
             element_output=self.element_compute,
             element_compute=self.element_compute)
+        for key in kwargs:
+            setattr(compute_node, key, kwargs[key])
         self.add_node(compute_node)
         return compute_node.name
 

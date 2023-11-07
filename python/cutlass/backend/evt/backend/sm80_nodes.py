@@ -44,6 +44,7 @@ from cutlass.backend.evt.ir import (
     ScalarBroadcastImpl,
     # Compute Node
     ComputeImpl,
+    OneHotImpl,
     # Store Node
     AuxStoreImpl,
     ColumnReductionImpl,
@@ -167,6 +168,24 @@ using {self.name_camel} = cutlass::epilogue::threadblock::VisitorColBroadcast<
 """
         return self._type_decl
 
+
+class Sm80OneHotImpl(OneHotImpl):
+
+    @property
+    def type_decl(self):
+        """
+        Return the string defining the type
+        """
+        if self._type_decl is not None:
+            return self._type_decl
+
+        self._type_decl = f"""
+using {self.name_camel} = cutlass::epilogue::threadblock::VisitorComputeOneHot<
+    OutputTileThreadMap, {DataTypeTag[self.element_output]}, 
+    {DataTypeTag[self.element_compute]}, {FloatRoundStyleTag[self.round_style]}
+>;
+"""
+        return self._type_decl
 
 class Sm80ComputeImpl(ComputeImpl):
 

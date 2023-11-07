@@ -123,7 +123,7 @@ class AuxLoadImpl(LoadImplBase):
         shape_l = self.get_shape_l()
         name = self.name
         stride_tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
-        shape_tuple_type = tuple_factory(shape_l, "int")
+        shape_tuple_type = tuple_factory(shape_l, "int", constants=[])
         element_type = self.element
         class _Argument(ctypes.Structure):
             _fields_ = [
@@ -167,7 +167,7 @@ class RowBroadcastImpl(LoadImplBase):
         shape_l = self.get_shape_l()
         name = self.name
         stride_tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
-        shape_tuple_type = tuple_factory(shape_l, "int")
+        shape_tuple_type = tuple_factory(shape_l, "int", constants=[])
         element_type = self.element
         class _Argument(ctypes.Structure):
             _fields_ = [
@@ -211,7 +211,7 @@ class ColumnBroadcastImpl(LoadImplBase):
         shape_l = self.get_shape_l()
         name = self.name
         stride_tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
-        shape_tuple_type = tuple_factory(shape_l, "int")
+        shape_tuple_type = tuple_factory(shape_l, "int", constants=[])
         element_type = self.element
         class _Argument(ctypes.Structure):
             _fields_ = [
