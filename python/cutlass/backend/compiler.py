@@ -156,6 +156,12 @@ class ArtifactManager:
             "-Xcudafe --diag_suppress=esa_on_defaulted_function_ignored",
             "--threads 4"
         ]
+        self.default_include_paths = [
+            CUDA_INSTALL_PATH + "/include",
+            CUTLASS_PATH + "/include",
+            CUTLASS_PATH + "/tools/util/include",
+            CUTLASS_PATH + "/python/cutlass/cpp/include",
+        ]
         self.nvcc()
         self.compiled_cache_device = {}
         self.compiled_cache_host = {}
@@ -358,24 +364,20 @@ class ArtifactManager:
         """
         Insert a new compiled device module
         """
-        include_paths = [
-            CUDA_INSTALL_PATH + "/include",
-            CUTLASS_PATH + "/include",
-            CUTLASS_PATH + "/tools/util/include",
-            CUTLASS_PATH + "/python/cutlass/cpp/include",
-        ]
-
         if device_cc() is not None:
             arch = device_cc()
         else:
             # Find the maximum arch tag among the provided operations and compile for that target.
             # Since we are compiling to .cubin files, only one architecture may be specified.
             arch = max([op.arch for op in operations])
-        host_compile_options = CompilationOptions(
-            self._nvcc_compile_options, arch, include_paths)
         if compile_options is None:
             compile_options = CompilationOptions(
-                self.default_compile_options, arch, include_paths)
+                self.default_compile_options, arch, self.default_include_paths)
+            host_compile_options = CompilationOptions(
+                self._nvcc_compile_options, arch, self.default_include_paths)
+        else:
+            host_compile_options = CompilationOptions(
+                self._nvcc_compile_options, arch, compile_options.include_paths)
         # save the cubin
         operation_key = []
         operation_list = []
