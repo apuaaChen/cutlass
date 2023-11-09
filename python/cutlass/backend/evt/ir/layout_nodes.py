@@ -56,7 +56,7 @@ class PermutationImpl:
         self.indices = list(node.kwargs["indices"])
         self.inverse_indices = self.get_inverse_indices(self.indices)
 
-    def get_inverse_impl(self):
+    def get_inverse_impl(self, *args):
         inverse_impl = deepcopy(self)
         inverse_impl.indices = self.inverse_indices
         inverse_impl.inverse_indices = self.indices
@@ -131,10 +131,12 @@ class ReshapeImpl:
         assert "new_shape" in node.kwargs.keys()
         self.output_shape = _list_to_tuple(node.kwargs["new_shape"])
 
-    def get_inverse_impl(self):
+    def get_inverse_impl(self, node):
         inverse_impl = deepcopy(self)
         inverse_impl.output_shape = self.input_shape
         inverse_impl.input_shape = self.output_shape
+        inverse_impl.node = node
+        inverse_impl.node.kwargs['new_shape'] = self.input_shape
         return inverse_impl
 
     def shape_propagation(self, input_node_meta):
@@ -224,6 +226,8 @@ class ReshapeImpl:
         # Update the input shape and output shape
         self.input_shape = _list_to_tuple(node_meta.tensor.shape)
         self.output_shape = _list_to_tuple(shape)
+        # Update the new_shape
+        self.node.kwargs["new_shape"] = self.output_shape
 
     def apply_to_user(self, user_meta: NodeBase):
         """
@@ -330,7 +334,7 @@ class LayoutNode(NodeBase):
 
     def get_inverse_node(self):
         inverse_node = deepcopy(self)
-        inverse_node.underlying_impl = self.underlying_impl.get_inverse_impl()
+        inverse_node.underlying_impl = self.underlying_impl.get_inverse_impl(inverse_node)
         return inverse_node
 
     def shape_propagation(self, input_node_metas):

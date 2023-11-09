@@ -172,8 +172,7 @@ class PassLayoutManipulateElimination(EVTPassBase):
                 # Layout node is not transparent with layout node
                 # Special case for the same shape reshape
                 if node_meta.fn == reshape and layout_node_meta.fn == reshape:
-                    if node_meta.kwargs["new_shape"] == layout_node_meta.kwargs["new_shape"]:
-                        return False
+                    return False
                 self.add_copy_before(layout_node_meta, node)
                 return False
             else:

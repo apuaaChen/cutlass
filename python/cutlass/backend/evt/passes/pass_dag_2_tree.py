@@ -52,6 +52,25 @@ class PassDAG2Tree(EVTPassBase):
         PassGetImpl
     ]
 
+    def requires(self) -> None:
+        # Reorganize the store nodes
+        for node_meta in self.dag_ir.nodes_meta:
+            if node_meta.op == "store":
+                users = self.dag_ir.get_users(node_meta.name)
+                if len(users) > 0:
+                    continue
+                # The store node has no users
+                inputs = self.dag_ir.get_all_inputs(node_meta.name)
+                assert len(inputs) == 1
+                input = inputs[0]
+                input_users = self.dag_ir.get_users(input)
+                if len(input_users) > 1:
+                    for input_user in input_users:
+                        if input_user == node_meta.name:
+                            continue
+                        self.dag_ir.remove_edge(input, input_user)
+                        self.dag_ir.add_edge(node_meta.name, input_user)
+
     def call(self):
         # Step 1: find the nodes that have multiple parents
         multi_parent_nodes = []
