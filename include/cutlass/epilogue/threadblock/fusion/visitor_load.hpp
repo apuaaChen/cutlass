@@ -173,22 +173,18 @@ struct VisitorRand {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // Scalar broadcast
 template<
+  class ThreadMap,
   class Element,
-  class StrideMNL = Stride<_0,_0,_0>,
-  int BroadcastCount = 1,
-  template <class> class ReductionFn = multiplies
+  class StrideMNL = Stride<_0,_0,_0>
 >
 struct VisitorScalarBroadcast {
-  static_assert(
-    (cute::is_same_v<StrideMNL, Stride<_0,_0,_0>>) || // scalar broadcast, e.g. alpha
-    (cute::is_same_v<StrideMNL, Stride<_0,_0,_1>>) ||
-    (cute::is_same_v<StrideMNL, Stride<_0,_0,int>>));  // batched scalar broadcast, e.g. per-batch alpha
+  static_assert(cute::is_same_v<StrideMNL, Stride<_0,_0,_0>>);  // batched scalar broadcast, e.g. per-batch alpha
   
   struct SharedStorage { };
 
   struct Arguments {
-    Element scalars[BroadcastCount] = {};
-    Element const* scalar_ptrs[BroadcastCount] = {};
+    Element scalar;
+    Element const* ptr_scalar = nullptr;
     StrideMNL dScalar = {};
   };
 
@@ -207,9 +203,7 @@ struct VisitorScalarBroadcast {
   VisitorScalarBroadcast(Params const& params, SharedStorage const& shared_storage)
       : params_ptr(&params) {
     // Get the scalar for non-batched broadcast
-    if constexpr (cute::is_same_v<StrideMNL, Stride<_0,_0,_0>>) {
-      update_scalar();
-    }
+    update_scalar();
   }
 
   Element scalar;
@@ -241,11 +235,6 @@ struct VisitorScalarBroadcast {
     ProblemShape problem_shape
   ) {
     // Get the scalar for batched broadcast
-    if constexpr (
-      cute::is_same_v<StrideMNL, Stride<_0,_0,_1>> ||
-      cute::is_same_v<StrideMNL, Stride<_0,_0,int>>) {
-      update_scalar(threadblock_tile_offset.k());
-    }
     return Callbacks(scalar);
   }
 
@@ -254,23 +243,11 @@ private:
   update_scalar(int l_coord = 0) {
     int l_offset = l_coord * size<2>(params_ptr->dScalar);
 
-    if (params_ptr->scalar_ptrs[0] != nullptr) {
-      scalar = params_ptr->scalar_ptrs[0][l_offset];
+    if (params_ptr->ptr_scalar != nullptr) {
+      scalar = *params_ptr->ptr_scalar;
     } else {
       // batch stride is ignored for nullptr fallback
-      scalar = params_ptr->scalars[0];
-    }
-
-    // Do reduction over multiple broadcasts if necessary
-    ReductionFn<Element> reduction_fn;
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 1; i < BroadcastCount; ++i) {
-      if (params_ptr->scalar_ptrs[i] != nullptr) {
-        scalar = reduction_fn(scalar, params_ptr->scalar_ptrs[i][l_offset]);
-      } else {
-        // batch stride is ignored for nullptr fallback
-        scalar = reduction_fn(scalar, params_ptr->scalars[i]);
-      }
+      scalar = params_ptr->scalar;
     }
   }
 
@@ -302,11 +279,7 @@ struct VisitorAuxLoad{
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    if constexpr (!is_tuple<ShapeL>::value) {
-      return {args.ptr_aux, args.null_default, args.dAux, get<2>(problem_shape)};
-    } else {
-      return args;
-    }
+    return args;
   }
 
   // Software pipeline stages
@@ -433,11 +406,7 @@ struct VisitorRowBroadcast {
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    if constexpr (!is_tuple<ShapeL>::value) {
-      return {args.ptr_row, args.null_default, args.dRow, get<2>(problem_shape)};
-    } else {
-      return args;
-    }
+    return args;
   }
 
   struct SharedStorage {};
@@ -562,11 +531,7 @@ struct VisitorColBroadcast {
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    if constexpr (!is_tuple<ShapeL>::value) {
-      return {args.ptr_col, args.null_default, args.dCol, get<2>(problem_shape)};
-    } else {
-      return args;
-    }
+    return args;
   }
 
   struct SharedStorage { };

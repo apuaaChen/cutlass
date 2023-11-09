@@ -125,7 +125,7 @@ class Sm80ScalarBroadcastImpl(ScalarBroadcastImpl):
 
         self._type_decl = f"""
 using {self.name_camel} = cutlass::epilogue::threadblock::VisitorScalarBroadcast<
-    {DataTypeTag[self.element]}, {self.stride_mnl}, {self.broadcast_count}, {op_tag(self.reduction_fn)}
+    OutputTileThreadMap, {DataTypeTag[self.element]}, {self.stride_mnl}
 >;
 """
         return self._type_decl

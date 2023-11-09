@@ -252,39 +252,55 @@ class ScalarBroadcastImpl(LoadImplBase):
     @property
     def argument_type(self):
         stride_mnl = self.get_stride_mnl()
+        shape_l = self.get_shape_l()
         name = self.name
-        tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
+        stride_tuple_type = tuple_factory(stride_mnl, self.stride_dtype)
+        shape_tuple_type = tuple_factory(shape_l, "int", constants=[])
         element_type = self.element
 
-        if self.tensor.is_constant:
-            value = self.tensor.value
-            class _Argument(ctypes.Structure):
-                _fields_ = [
-                    ("scalars", dtype2ctype[element_type]),
-                    ("scalar_ptrs", ctypes.c_void_p),
-                    ("dScalar", tuple_type)
-                ]
-                def __init__(self, kwargs) -> None:
-                    self.scalars = to_ctype_value(value, element_type)
-                    self.scalar_ptrs = 0
-                    self.dScalar = tuple_type(stride_mnl)
+        if stride_mnl == (0,0,0):
+            if self.tensor.is_constant:
+                value = self.tensor.value
+                class _Argument(ctypes.Structure):
+                    _fields_ = [
+                        ("scalars", dtype2ctype[element_type]),
+                        ("scalar_ptrs", ctypes.c_void_p),
+                        ("dScalar", stride_tuple_type)
+                    ]
+                    def __init__(self, kwargs) -> None:
+                        self.scalars = to_ctype_value(value, element_type)
+                        self.scalar_ptrs = 0
+                        self.dScalar = stride_tuple_type(stride_mnl)
 
+            else:
+                class _Argument(ctypes.Structure):
+                    _fields_ = [
+                        ("scalars", dtype2ctype[element_type]),
+                        ("scalar_ptrs", ctypes.c_void_p),
+                        ("dScalar", stride_tuple_type)
+                    ]
+                    def __init__(self, kwargs) -> None:
+                        scalar_or_ptr = kwargs[name]
+                        if isinstance(scalar_or_ptr, float):
+                            self.scalars = to_ctype_value(scalar_or_ptr, element_type)
+                            self.scalar_ptrs = 0
+                        else:
+                            self.scalar_ptrs = int(scalar_or_ptr)
+
+                        self.dScalar = stride_tuple_type(stride_mnl)
         else:
             class _Argument(ctypes.Structure):
                 _fields_ = [
-                    ("scalars", dtype2ctype[element_type]),
-                    ("scalar_ptrs", ctypes.c_void_p),
-                    ("dScalar", tuple_type)
+                    ("ptr_scalar", ctypes.c_void_p),
+                    ("null_default", dtype2ctype[element_type]),
+                    ("dScalar", stride_tuple_type),
+                    ("sL", shape_tuple_type)
                 ]
                 def __init__(self, kwargs) -> None:
-                    scalar_or_ptr = kwargs[name]
-                    if isinstance(scalar_or_ptr, float):
-                        self.scalars = to_ctype_value(scalar_or_ptr, element_type)
-                        self.scalar_ptrs = 0
-                    else:
-                        self.scalar_ptrs = int(scalar_or_ptr)
-
-                    self.dScalar = tuple_type(stride_mnl)
+                    self.ptr_scalar = int(kwargs[name])
+                    self.null_default = to_ctype_value(0, element_type)
+                    self.dScalar = stride_tuple_type(stride_mnl)
+                    self.sL = shape_tuple_type(shape_l)
 
         return _Argument
 

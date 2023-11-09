@@ -257,11 +257,7 @@ struct VisitorColReduction {
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    if constexpr (!is_tuple<ShapeL>::value) {
-      return {args.ptr_col, args.reduction_identity, args.dCol, get<2>(problem_shape)};
-    } else {
-      return args;
-    }
+    return args;
   }
 
   struct SharedStorage { };
@@ -400,11 +396,7 @@ struct VisitorRowStore {
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    if constexpr (!is_tuple<ShapeL>::value) {
-      return {args.ptr_row, args.dRow, get<2>(problem_shape)};
-    } else {
-      return args;
-    }
+    return args;
   }
 
   struct SharedStorage {};
@@ -526,12 +518,7 @@ struct VisitorRowReduction {
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    if constexpr (!is_tuple<ShapeL>::value) {
-      return {args.ptr_row, args.reduction_identity, args.dRow, get<2>(problem_shape)};
-    } else {
-      return args;
-    }
-    
+    return args;
   }
 
   using SharedStorageShape = decltype(select<0,1,2,3,5,8,10>(typename ThreadMap::ThreadMapShape{}));
@@ -804,11 +791,7 @@ struct VisitorScalarReduction {
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    if constexpr (!is_tuple<ShapeL>::value) {
-      return {args.ptr_scalar, args.reduction_identity, args.dScalar, get<2>(problem_shape)};
-    } else {
-      return args;
-    }
+    return args;
   }
 
   struct SharedStorage { };
