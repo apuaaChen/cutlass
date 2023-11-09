@@ -161,6 +161,7 @@ class ActivationOp(enum.Enum):
     Sigmoid = enum_auto()
     SiLU = enum_auto()
     Tanh = enum_auto()
+    TanhBackward = enum_auto()
 
 
 ActivationOpTag = {
@@ -174,6 +175,7 @@ ActivationOpTag = {
     ActivationOp.Sigmoid: "cutlass::epilogue::thread::Sigmoid",
     ActivationOp.SiLU: "cutlass::epilogue::thread::SiLu",
     ActivationOp.Tanh: "cutlass::epilogue::thread::Tanh",
+    ActivationOp.TanhBackward: "cutlass::epilogue::thread::TanhBackward"
 }
 
 

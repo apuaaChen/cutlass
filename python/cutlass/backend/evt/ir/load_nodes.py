@@ -46,7 +46,7 @@ class LoadImplBase(ImplBase):
     """
     Base class for load node implementations
     """
-    reserved_names = ["accum", "C"]
+    reserved_names = ["accum", "accum_t", "C"]
     def __init__(self, node) -> None:
         super().__init__(node)
         self.element = node.element
@@ -62,7 +62,7 @@ class AccumulatorImpl(LoadImplBase):
 
     @staticmethod
     def match(node, problem_size: tuple):
-        return node.name == "accum" and node.tensor.shape == problem_size
+        return node.name in ["accum", "accum_t"] and node.tensor.shape == problem_size
 
 
 class RandImpl(LoadImplBase):

@@ -176,7 +176,7 @@ class EVTFrontendBase:
         load_node = LoadNode(name)
         load_node.tensor = {"tensor": example}
         # Special logics for accumulator
-        if name == "accum":
+        if name in ["accum", "accum_t"]:
             if load_node.tensor.rank == 2:
                 new_shape = tuple([1, ] + list(load_node.tensor.shape))
                 load_node.tensor.broadcast(new_shape)

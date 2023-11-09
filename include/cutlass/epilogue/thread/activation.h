@@ -282,6 +282,31 @@ struct Tanh<Array<half_t, N>> {
   }
 };
 
+// Tanh backward operator
+template <typename T>
+struct TanhBackward {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &grad, T const &value) const {
+    return grad * (T(1) - value * value);
+  }
+};
+
+template <typename T, int N>
+struct TanhBackward<Array<T, N> > {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &grad, Array<T, N> const &value) const {
+    Array<T, N> y;
+    TanhBackward<T> tanh_bp_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      y[i] = tanh_bp_op(grad[i], value[i]);
+    }
+
+    return y;
+  }
+};
+
 // Sigmoid operator
 template <typename T>
 struct Sigmoid {
