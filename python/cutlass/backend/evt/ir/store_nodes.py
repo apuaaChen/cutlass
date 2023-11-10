@@ -42,7 +42,8 @@ from cutlass.backend.epilogue import dtype2ctype, to_ctype_value
 from cutlass.backend.evt.ir.node import NodeBase, ImplBase, NoOpImpl
 from cutlass.backend.evt.ir.tensor import Tensor
 from cutlass.backend.library import FloatRoundStyle, FunctionalOp
-
+import numpy as np
+from pycute import product
 
 class StoreImplBase(ImplBase):
     """
@@ -88,6 +89,30 @@ class AuxStoreImpl(StoreImplBase):
     def __init__(self, node) -> None:
         super().__init__(node)
         self.round_style = FloatRoundStyle.ToNearest
+
+        # Fix invalid stride
+        strideMN = node.store_tensor.stride[-2:]
+        invalid_stride = [idx for idx, stride in enumerate(strideMN) if isinstance(stride, tuple)]
+        assert len(invalid_stride) <= 1
+        if len(invalid_stride) == 1:
+            idx = invalid_stride[0] + 1
+            # Step 1: get the flattened shape
+            flatten_shape = tuple([node.store_tensor.shape[i] for i in range(idx)]) + node.store_tensor.shape[idx] + tuple([node.store_tensor.shape[i] for i in range(idx+1, 3)])
+            collaped_shape = tuple([node.store_tensor.shape[i] for i in range(idx)]) + (product(node.store_tensor.shape[idx]),) + tuple([node.store_tensor.shape[i] for i in range(idx+1, 3)])
+            # Get permutation indices
+            tuple_stride = node.store_tensor.stride[idx]
+            indices = list(np.argsort(tuple_stride)[::-1] + 1)
+            # sorted->unsorted
+            indices = [0,] + indices + [len(flatten_shape)-1]
+            # unsorted->sorted
+            inverse_indices = list(np.argsort(indices))
+
+            self.node.store_tensor.reshape(flatten_shape)
+            self.node.store_tensor.permute(inverse_indices)
+            self.node.store_tensor.reshape(collaped_shape)
+
+            self.node.post_permute_indices = indices
+            self.node.post_reshape_shape = flatten_shape
 
     @property
     def argument_type(self):

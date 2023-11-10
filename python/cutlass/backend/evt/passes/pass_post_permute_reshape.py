@@ -30,16 +30,23 @@
 #
 #################################################################################################
 
-from cutlass.backend.evt.passes.graph_drawer import EVTGraphDrawer
-from cutlass.backend.evt.passes.pass_argument_type import PassGetArgumentType
-from cutlass.backend.evt.passes.pass_dag_2_tree import PassDAG2Tree
+"""
+Summarize the reshape-permute info used to legalize store nodes
+"""
+from cutlass.backend.evt.ir import DAGIR
+from cutlass.backend.evt.passes.pass_manager import EVTPassBase
 from cutlass.backend.evt.passes.pass_get_impl import PassGetImpl
-from cutlass.backend.evt.passes.pass_fix_element_d import PassFixElementD
-from cutlass.backend.evt.passes.pass_layout_elimination import PassLayoutManipulateElimination
-from cutlass.backend.evt.passes.pass_manager import EVTPassManager
-from cutlass.backend.evt.passes.pass_preprocess_red import PassPreprocessRed
-from cutlass.backend.evt.passes.pass_preprocess_load import PassPreprocessLoad
-from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
-from cutlass.backend.evt.passes.pass_sm80_rowmajor_output import PassSm80RowMajorOutputPass
-from cutlass.backend.evt.passes.smem_size_calculator import GetSmemSize
-from cutlass.backend.evt.passes.pass_post_permute_reshape import PassPostReshapePermute
+
+class PassPostReshapePermute(EVTPassBase):
+    dependencies = [
+        PassGetImpl
+    ]
+
+    def requires(self) -> None:
+        if not hasattr(self.dag_ir, "post_reshape_permute"):
+            self.dag_ir.post_reshape_permute = {}
+
+    def call(self):
+        for node_meta in self.dag_ir.nodes_meta:
+            if hasattr(node_meta, "post_reshape_shape") and hasattr(node_meta, "post_permute_indices"):
+                self.dag_ir.post_reshape_permute[node_meta.name] = (node_meta.post_reshape_shape, node_meta.post_permute_indices)

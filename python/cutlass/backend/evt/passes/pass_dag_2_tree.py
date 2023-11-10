@@ -41,6 +41,7 @@ from cutlass.backend.evt.ir import DAGIR, TopoVisitorNode
 from cutlass.backend.evt.passes.pass_get_impl import PassGetImpl
 from cutlass.backend.evt.passes.pass_manager import EVTPassBase
 from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
+from cutlass.backend.evt.passes.pass_post_permute_reshape import PassPostReshapePermute
 
 
 class PassDAG2Tree(EVTPassBase):
@@ -49,6 +50,7 @@ class PassDAG2Tree(EVTPassBase):
     """
     dependencies = [
         PassShapeTypePropagation,
+        PassPostReshapePermute,
         PassGetImpl
     ]
 

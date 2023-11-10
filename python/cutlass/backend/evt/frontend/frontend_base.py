@@ -57,6 +57,7 @@ from cutlass.backend.evt.passes import (
     PassPreprocessRed,
     PassPreprocessLoad,
     PassShapeTypePropagation,
+    PassPostReshapePermute
 )
 from cutlass.backend.utils import device_cc
 from cutlass.epilogue.evt_ops import permute, reshape
@@ -88,7 +89,8 @@ class EVTFrontendBase:
                 PassSm80RowMajorOutputPass,
                 PassGetImpl,
                 PassDAG2Tree,
-                PassFixElementD
+                PassFixElementD,
+                PassPostReshapePermute
             ] + additional_passes)
 
         if self.cc == 80:
