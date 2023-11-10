@@ -43,3 +43,4 @@ from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeType
 from cutlass.backend.evt.passes.pass_sm80_rowmajor_output import PassSm80RowMajorOutputPass
 from cutlass.backend.evt.passes.smem_size_calculator import GetSmemSize
 from cutlass.backend.evt.passes.pass_post_permute_reshape import PassPostReshapePermute
+from cutlass.backend.evt.passes.pass_duplicated_store_elimination import PassDuplicatedStoreElimination

@@ -42,6 +42,7 @@ from cutlass.backend.evt.passes.pass_get_impl import PassGetImpl
 from cutlass.backend.evt.passes.pass_manager import EVTPassBase
 from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
 from cutlass.backend.evt.passes.pass_post_permute_reshape import PassPostReshapePermute
+from cutlass.backend.evt.passes.pass_duplicated_store_elimination import PassDuplicatedStoreElimination
 
 
 class PassDAG2Tree(EVTPassBase):
@@ -51,7 +52,8 @@ class PassDAG2Tree(EVTPassBase):
     dependencies = [
         PassShapeTypePropagation,
         PassPostReshapePermute,
-        PassGetImpl
+        PassGetImpl,
+        PassDuplicatedStoreElimination
     ]
 
     def requires(self) -> None:
