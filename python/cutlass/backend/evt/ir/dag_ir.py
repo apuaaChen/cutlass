@@ -193,7 +193,14 @@ class DAGIR:
         for each epilogue visitor pattern and ensures the compilation cache can be reused.
         :return: list[str]
         """
-        return list(nx.lexicographical_topological_sort(self._graph))
+        def mapping(node):
+            if self.get_node_meta(node).underlying_impl:
+                if hasattr(self.get_node_meta(node).underlying_impl, "name_camel"):
+                    return self.get_node_meta(node).name_camel
+            
+            return node
+
+        return list(nx.lexicographical_topological_sort(self._graph, key=mapping))
 
     def node_metas_topological_order(self):
         """

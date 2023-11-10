@@ -331,11 +331,14 @@ class StoreNode(NodeBase):
         ColumnReductionImpl, ScalarReductionImpl,
         NoOpImpl, StoreDImpl, RowStoreImpl
     ]
+    lcnt = 0
     def __init__(self, name: str) -> None:
         super().__init__(name)
         self.op = "store"
         self.is_output = False
         self._store_tensor = None
+        self.legal_name = f"{self.op}_{StoreNode.lcnt}"
+        StoreNode.lcnt += 1
 
     @property
     def store_tensor(self) -> Tensor:

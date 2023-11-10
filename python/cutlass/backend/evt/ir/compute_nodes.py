@@ -90,6 +90,7 @@ class ComputeNode(NodeBase):
         OneHotImpl,
         ComputeImpl
     ]
+    lcnt = 0
     def __init__(
         self, name: str, fn, element_output,
         element_compute,
@@ -99,6 +100,8 @@ class ComputeNode(NodeBase):
         self.fn = fn
         self.element_compute = element_compute
         self.round_style = round_style
+        self.legal_name = f"{self.op}_{ComputeNode.lcnt}"
+        ComputeNode.lcnt += 1
     
     def shape_propagation(self, input_node_metas):
         if self.fn == FunctionalOp.OneHot:

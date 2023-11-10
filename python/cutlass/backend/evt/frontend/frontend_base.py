@@ -43,6 +43,7 @@ from cutlass.backend.evt.ir import (
     LayoutNode,
     LoadNode,
     StoreNode,
+    TopoVisitorNode
 )
 from cutlass.backend.evt.passes import (
     EVTGraphDrawer,
@@ -99,6 +100,12 @@ class EVTFrontendBase:
             self._epilogue_stages = 1
         else:
             self._epilogue_stages = None
+        
+        # Reinitiate counters
+        LoadNode.lcnt = 0
+        StoreNode.lcnt = 0
+        ComputeNode.lcnt = 0
+        TopoVisitorNode.lcnt = 0
 
     @property
     def epilogue_stages(self):

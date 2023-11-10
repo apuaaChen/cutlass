@@ -49,6 +49,7 @@ class ImplBase:
     def __init__(self, node) -> None:
         self.node = node
         self.name = node.name
+        self.legal_name = node.legal_name
         self.tensor = node.tensor
         self._type_decl = None
         self.stride_dtype = "int64_t"
@@ -78,7 +79,8 @@ class ImplBase:
         """
         Return the CamelCase name.
         """
-        return sub(r"(_|-)+", " ", self.name).title().replace(" ", "")
+        return sub(r"(_|-)+", " ", self.legal_name).title().replace(" ", "")
+        # TODO create some legal name for the node
 
     def _emit_cute_tuple(self, py_tuple):
         """
@@ -288,12 +290,17 @@ class TopoVisitorImpl(ImplBase):
     def __init__(self, node) -> None:
         super().__init__(node.output_node)
         self.name = node.name
+        self.legal_name = node.legal_name
         self.element_output = node.output_node.element_output
 
 class TopoVisitorNode(NodeBase):
+    lcnt = 0
     def __init__(self, name: str, subgraph, output_node) -> None:
         super().__init__(name)
         self.subgraph = subgraph
         self.output_node = output_node
         self.op = "dag"
-        self.underlying_impl = TopoVisitorImpl(self)
+        self.legal_name = f"{self.op}_{TopoVisitorNode.lcnt}"
+        TopoVisitorNode.lcnt += 1
+
+        self.underlying_impl = TopoVisitorImpl(self)        
