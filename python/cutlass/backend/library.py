@@ -414,6 +414,10 @@ class TileDescription:
   Epilogue schedule: {kschedule.name}
   TileScheduler: {tschedule}
 }}"""
+    
+    def __eq__(self, td) -> bool:
+        return str(self) == str(td)
+
 
 
 class TensorDescription:

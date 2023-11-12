@@ -59,7 +59,8 @@ from cutlass.backend.evt.passes import (
     PassPreprocessLoad,
     PassShapeTypePropagation,
     PassPostReshapePermute,
-    PassDuplicatedStoreElimination
+    PassDuplicatedStoreElimination,
+    PassAssignLegalName
 )
 from cutlass.backend.utils import device_cc
 from cutlass.epilogue.evt_ops import permute, reshape
@@ -93,19 +94,14 @@ class EVTFrontendBase:
                 PassDAG2Tree,
                 PassFixElementD,
                 PassPostReshapePermute,
-                PassDuplicatedStoreElimination
+                PassDuplicatedStoreElimination,
+                PassAssignLegalName
             ] + additional_passes)
 
         if self.cc == 80:
             self._epilogue_stages = 1
         else:
             self._epilogue_stages = None
-        
-        # Reinitiate counters
-        LoadNode.lcnt = 0
-        StoreNode.lcnt = 0
-        ComputeNode.lcnt = 0
-        TopoVisitorNode.lcnt = 0
 
     @property
     def epilogue_stages(self):

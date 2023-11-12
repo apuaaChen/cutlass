@@ -30,18 +30,60 @@
 #
 #################################################################################################
 
-from cutlass.backend.evt.passes.graph_drawer import EVTGraphDrawer
-from cutlass.backend.evt.passes.pass_argument_type import PassGetArgumentType
+"""
+Assign each node a legal name to improve the cache hit rate of the same graph
+"""
+from cutlass.backend.evt.passes.pass_manager import EVTPassBase
 from cutlass.backend.evt.passes.pass_dag_2_tree import PassDAG2Tree
-from cutlass.backend.evt.passes.pass_get_impl import PassGetImpl
-from cutlass.backend.evt.passes.pass_fix_element_d import PassFixElementD
-from cutlass.backend.evt.passes.pass_layout_elimination import PassLayoutManipulateElimination
-from cutlass.backend.evt.passes.pass_manager import EVTPassManager
-from cutlass.backend.evt.passes.pass_preprocess_red import PassPreprocessRed
-from cutlass.backend.evt.passes.pass_preprocess_load import PassPreprocessLoad
-from cutlass.backend.evt.passes.pass_shape_type_propagation import PassShapeTypePropagation
-from cutlass.backend.evt.passes.pass_sm80_rowmajor_output import PassSm80RowMajorOutputPass
-from cutlass.backend.evt.passes.smem_size_calculator import GetSmemSize
-from cutlass.backend.evt.passes.pass_post_permute_reshape import PassPostReshapePermute
-from cutlass.backend.evt.passes.pass_duplicated_store_elimination import PassDuplicatedStoreElimination
-from cutlass.backend.evt.passes.pass_legal_name import PassAssignLegalName
+from cutlass.backend.evt.ir import DAGIR
+
+class PassAssignLegalName(EVTPassBase):
+    dependencies = [
+        PassDAG2Tree
+    ]
+
+    def call(self):
+        self.visited = []
+        self.load_cnt = 0
+        self.compute_cnt = 0
+        self.store_cnt = 0
+        self.dag_cnt = 0
+
+
+        # Start from accumulator
+        accum_node = None
+        if self.dag_ir.has_node("accum_t"):
+            accum_node = "accum_t"
+        else:
+            assert self.dag_ir.has_node("accum")
+            accum_node = "accum"
+        
+        self.visit(accum_node, self.dag_ir)
+    
+    def visit(self, node: str, graph_ir: DAGIR):
+        if node in self.visited:
+            return
+        node_meta = graph_ir.get_node_meta(node)
+        if node_meta.disabled:
+            return
+        # visit the current node
+        self.visited.append(node)
+        # Update the legal name of the current node
+        op = node_meta.op
+        cnt = getattr(self, f"{op}_cnt")
+        legal_name = f"{op}_{cnt}"
+        setattr(self, f"{op}_cnt", cnt +1)
+        node_meta.underlying_impl.legal_name = legal_name
+
+        # Special rule for dag
+        if op == "dag":
+            self.visit(node_meta.output_node.name, node_meta.subgraph)
+            
+        # Visit all its incoming edges sorted by edge weight
+        inputs = graph_ir.get_all_inputs(node)
+        for input in inputs:
+            self.visit(input, graph_ir)
+        # Visit all the out going edges (TODO: may cause indeterministic result)
+        users = graph_ir.get_users(node)
+        for user in users:
+            self.visit(user, graph_ir)

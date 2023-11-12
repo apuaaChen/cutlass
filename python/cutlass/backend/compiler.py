@@ -154,7 +154,8 @@ class ArtifactManager:
             "-std=c++17",
             "--expt-relaxed-constexpr",
             "-Xcudafe --diag_suppress=esa_on_defaulted_function_ignored",
-            "--threads 4"
+            "--threads 4",
+            "--use_fast_math"
         ]
         self.default_include_paths = [
             CUDA_INSTALL_PATH + "/include",
@@ -400,6 +401,7 @@ class ArtifactManager:
                     setattr(operation.rt_module, key, compiled_host_fns[key])
                 operation.rt_module.initialize()
             else:
+                print(key)
                 operation_list.append(operation.rt_module)
                 operation_key.append(key)
 

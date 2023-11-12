@@ -646,7 +646,7 @@ struct VisitorRowReduction {
         if (get<0>(tSR_cRows(j)) < get<1>(typename ThreadMap::CtaShapeMNL{}) && get<1>(tC_cRow(j)) < n) {
           CUTLASS_PRAGMA_UNROLL
           for (int i = 0; i < size(tSR_sRows) / size(tSR_rRows); ++i) {
-            tSR_rRows(j) = reduce_input_reg(tSR_rRows(j), tSR_sRows(i + j * size(tSR_sRows) / size(tSR_rRows)));
+            tSR_rRows(j) = reduce_input_reg(tSR_rRows(j), tSR_sRows(j,i));
           }
           atomic_reduce<AtomicReduceFn, RoundStyle>(&tC_gRow(j), tSR_rRows(j));
         }

@@ -321,7 +321,6 @@ class LoadNode(NodeBase):
     Load Node
     """
     cnt = 0
-    lcnt = 0
     possible_impls = [
         AccumulatorImpl, RandImpl, LoadSrcImpl, AuxLoadImpl,
         RowBroadcastImpl, ColumnBroadcastImpl,
@@ -333,8 +332,6 @@ class LoadNode(NodeBase):
             LoadNode.cnt += 1
         super().__init__(name)
         self.op = "load"
-        self.legal_name = f"{self.op}_{LoadNode.lcnt}"
-        LoadNode.lcnt += 1
 
     def type_propagation(self, *args, **kwargs):
         """
