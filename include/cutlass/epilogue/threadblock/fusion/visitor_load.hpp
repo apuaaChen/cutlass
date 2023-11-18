@@ -79,6 +79,18 @@ struct VisitorAccFetch : VisitorImpl2x<> {
   ) {
     return Callbacks{};
   }
+
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape,
+    conv::Conv2dProblemSize conv_problem_size,
+    int start_h_, int start_w_, int tiled_rows_per_filter
+  ) {
+    return Callbacks{};
+  }
 };
 
 
@@ -238,6 +250,18 @@ struct VisitorScalarBroadcast {
     return Callbacks(scalar);
   }
 
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape,
+    conv::Conv2dProblemSize conv_problem_size,
+    int start_h_, int start_w_, int tiled_rows_per_filter
+  ) {
+    return Callbacks(scalar);
+  }
+
 private:
   CUTLASS_DEVICE void
   update_scalar(int l_coord = 0) {
@@ -345,6 +369,85 @@ struct VisitorAuxLoad{
     }
   };
 
+  template <class MTensor, class GTensor, class RTensor, class CTensor, class ProblemShape>
+  struct CallbacksStridedDgrad : EmptyCallbacks {
+    CUTLASS_DEVICE
+    CallbacksStridedDgrad(
+      MTensor&& mAux,
+      GTensor&& tC_gAux,
+      RTensor&& tC_rAux,
+      CTensor&& tC_cAux,
+      ProblemShape problem_shape,
+      Params const* params_ptr,
+      conv::Conv2dProblemSize conv_problem_size,
+      int start_h_, int start_w_, int tiled_rows_per_filter
+    ):
+      mAux(cute::forward<MTensor>(mAux)),
+      tC_gAux(cute::forward<GTensor>(tC_gAux)),
+      tC_rAux(cute::forward<RTensor>(tC_rAux)),
+      tC_cAux(cute::forward<CTensor>(tC_cAux)),
+      problem_shape(problem_shape),
+      params_ptr(params_ptr),
+      conv_problem_size(conv_problem_size),
+      start_h_(start_h_),
+      start_w_(start_w_),
+      tiled_rows_per_filter(tiled_rows_per_filter)
+    {
+      p_ = (conv_problem_size.H - start_h_ + conv_problem_size.stride_h - 1) / conv_problem_size.stride_h;
+      q_ = (conv_problem_size.W - start_w_ + conv_problem_size.stride_w - 1) / conv_problem_size.stride_w;
+    }
+    MTensor mAux;
+    GTensor tC_gAux;
+    RTensor tC_rAux;
+    CTensor tC_cAux;
+    Params const* params_ptr;
+    ProblemShape problem_shape;
+    conv::Conv2dProblemSize conv_problem_size;
+    int tiled_rows_per_filter;
+    int p_;
+    int q_;
+    int start_h_;
+    int start_w_;
+
+    template <class mCoord>
+    CUTLASS_DEVICE auto
+    mapped_coord(mCoord coord) {
+      auto [m_idx, n_idx, l_idx] = coord;
+      int npq_offset = m_idx % tiled_rows_per_filter;
+      int n = npq_offset / (p_ * q_);
+      int residual = npq_offset % (p_ * q_);
+      int p = residual / q_;
+      int q = residual % q_;
+
+      int mapped_m_idx = n * (conv_problem_size.H * conv_problem_size.W) +
+                        (start_h_ + p * conv_problem_size.stride_h) * conv_problem_size.W +
+                        (start_w_ + q * conv_problem_size.stride_w);
+      return mCoord(mapped_m_idx, n_idx, l_idx);
+    }
+
+    CUTLASS_DEVICE void
+    begin_step(int step_idx) {
+      clear(tC_rAux(_,_,_,step_idx%Stages));
+      auto src_v = filter(tC_gAux(_,_,_,step_idx));
+      auto coord_v = filter(tC_cAux(_,_,_,step_idx));
+      auto dst_v = filter(tC_rAux(_,_,_,step_idx%Stages));
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(src_v); ++i) {
+        auto m_coord = mapped_coord(coord_v(i));
+        bool guard = elem_less(m_coord, problem_shape);
+        cutlass::arch::global_load<VecType, sizeof(VecType)>(dst_v(i), (void const*)&mAux(m_coord), guard);
+      }
+    }
+
+    template <class ElementAccumulator, int FragmentSize>
+    CUTLASS_DEVICE auto // returns an Array
+    visit(int iter_idx, int row_idx, int column_idx, int frg_idx, 
+          Array<ElementAccumulator, FragmentSize> const& frg_acc) {
+      Tensor tC_rAux_frg = recast<Array<Element, FragmentSize>>(coalesce(tC_rAux(_,_,_,iter_idx%Stages)));
+      return tC_rAux_frg(frg_idx);
+    }
+  };
+
   template <class ProblemShape>
   CUTLASS_DEVICE auto
   get_callbacks(
@@ -379,6 +482,49 @@ struct VisitorAuxLoad{
       cute::move(tC_cAux),
       problem_shape,
       params_ptr
+    );
+  }
+
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape,
+    conv::Conv2dProblemSize conv_problem_size,
+    int start_h_, int start_w_, int tiled_rows_per_filter
+  ) { 
+    Tensor mAux = make_tensor(
+      make_gmem_ptr(params_ptr->ptr_aux), 
+      make_shape(get<0>(problem_shape), get<1>(problem_shape), params_ptr->sAux),
+      params_ptr->dAux);   // (M,N,L)
+    // VECTOR, FRAGMENT_COLUMN, FRAGMENT_ROW, ITERATION_ROW, ITERATION_GROUP, ITERATION_CLUSTER
+    Tensor tC_gAux = recast<VecType>(
+      group_modes<3,6>(ThreadMap::partition(mAux, thread_idx, threadblock_tile_offset)));
+    // VECTOR, FRAGMENT_COLUMN, FRAGMENT_ROW, Stages
+    Tensor tC_rAux = make_tensor<VecType>(
+      make_layout(flatten(make_shape(take<0,3>(tC_gAux.shape()), Int<Stages>{}))));
+
+    // Generate the pred tensor
+    Tensor cAux = make_identity_tensor(mAux.shape());
+    Tensor tC_cAux = local_partition(
+      group_modes<3,6>(ThreadMap::partition(cAux, thread_idx, threadblock_tile_offset)),
+      Shape<Int<VecLength>>{},
+      (_0{})
+    );
+
+    return CallbacksStridedDgrad<
+      decltype(mAux),
+      decltype(tC_gAux), decltype(tC_rAux), 
+      decltype(tC_cAux), ProblemShape>(
+      cute::move(mAux),
+      cute::move(tC_gAux),
+      cute::move(tC_rAux),
+      cute::move(tC_cAux),
+      problem_shape,
+      params_ptr,
+      conv_problem_size,
+      start_h_, start_w_, tiled_rows_per_filter
     );
   }
 };
@@ -503,6 +649,21 @@ struct VisitorRowBroadcast {
       cute::move(tC_cRow),
       problem_shape,
       params_ptr
+    );
+  }
+
+
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape,
+    conv::Conv2dProblemSize conv_problem_size,
+    int start_h_, int start_w_, int tiled_rows_per_filter
+  ) {
+    return get_callbacks<ProblemShape>(
+      threadblock_tile_offset, thread_idx, problem_shape
     );
   }
 

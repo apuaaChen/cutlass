@@ -79,7 +79,6 @@ class ImplBase:
         Return the CamelCase name.
         """
         return sub(r"(_|-)+", " ", self.legal_name).title().replace(" ", "")
-        # TODO create some legal name for the node
 
     def _emit_cute_tuple(self, py_tuple):
         """

@@ -61,23 +61,23 @@ class PassAssignLegalName(EVTPassBase):
         self.visit(accum_node, self.dag_ir)
     
     def visit(self, node: str, graph_ir: DAGIR):
-        if node in self.visited:
-            return
         node_meta = graph_ir.get_node_meta(node)
-        if node_meta.disabled:
+        if node in self.visited and (not node_meta.disabled):
             return
         # visit the current node
-        self.visited.append(node)
+        if not node_meta.disabled:
+            self.visited.append(node)
         # Update the legal name of the current node
-        op = node_meta.op
-        cnt = getattr(self, f"{op}_cnt")
-        legal_name = f"{op}_{cnt}"
-        setattr(self, f"{op}_cnt", cnt +1)
-        node_meta.underlying_impl.legal_name = legal_name
+        if not node_meta.disabled:
+            op = node_meta.op
+            cnt = getattr(self, f"{op}_cnt")
+            legal_name = f"{op}_{cnt}"
+            setattr(self, f"{op}_cnt", cnt +1)
+            node_meta.underlying_impl.legal_name = legal_name
 
-        # Special rule for dag
-        if op == "dag":
-            self.visit(node_meta.output_node.name, node_meta.subgraph)
+            # Special rule for dag
+            if op == "dag":
+                self.visit(node_meta.output_node.name, node_meta.subgraph)
             
         # Visit all its incoming edges sorted by edge weight
         inputs = graph_ir.get_all_inputs(node)

@@ -100,6 +100,18 @@ struct VisitorCompute : VisitorImpl2x<> {
     return Callbacks();
   }
 
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape,
+    conv::Conv2dProblemSize conv_problem_size,
+    int start_h_, int start_w_, int tiled_rows_per_filter
+  ) {
+    return Callbacks();
+  }
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -109,57 +121,111 @@ struct VisitorCompute : VisitorImpl2x<> {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass{
-  template <typename T, int N>
-  struct greater_equal<Array<T, N>> {
+template <typename T, int N>
+struct greater_equal<Array<T, N>> {
 
-    using OutputConvert = NumericArrayConverter<T, bool, N>;
+  using OutputConvert = NumericArrayConverter<T, bool, N>;
 
-    CUTLASS_HOST_DEVICE
-    Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
 
-      Array<bool, N> result;
-      greater_equal<T> scalar_op;
+    Array<bool, N> result;
+    greater_equal<T> scalar_op;
 
-      OutputConvert converter{};
+    OutputConvert converter{};
 
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < N; ++i) {
-        result[i] = scalar_op(lhs[i], rhs[i]);
-      }
-
-      return converter(result);
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(lhs[i], rhs[i]);
     }
 
-    CUTLASS_HOST_DEVICE
-    Array<T, N> operator()(Array<T, N> const &lhs, T const &scalar) const {
+    return converter(result);
+  }
 
-      Array<bool, N> result;
-      greater_equal<T> scalar_op;
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs, T const &scalar) const {
 
-      OutputConvert converter{};
+    Array<bool, N> result;
+    greater_equal<T> scalar_op;
 
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < N; ++i) {
-        result[i] = scalar_op(lhs[i], scalar);
-      }
+    OutputConvert converter{};
 
-      return converter(result);
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(lhs[i], scalar);
     }
 
-    CUTLASS_HOST_DEVICE
-    Array<T, N> operator()( T const &scalar, Array<T, N> const &rhs) const {
+    return converter(result);
+  }
 
-      Array<bool, N> result;
-      greater_equal<T> scalar_op;
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()( T const &scalar, Array<T, N> const &rhs) const {
 
-      OutputConvert converter{};
+    Array<bool, N> result;
+    greater_equal<T> scalar_op;
 
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < N; ++i) {
-        result[i] = scalar_op(scalar, rhs[i]);
-      }
+    OutputConvert converter{};
 
-      return converter(result);
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(scalar, rhs[i]);
     }
-  };
+
+    return converter(result);
+  }
+};
+
+template <typename T>
+struct ne {};
+
+template <typename T, int N>
+struct ne<Array<T, N>> {
+
+  using OutputConvert = NumericConverter<T, bool>;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
+
+    Array<T, N> result;
+
+    OutputConvert converter{};
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = converter(lhs[i] != rhs[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs, T const &scalar) const {
+
+    Array<T, N> result;
+
+    OutputConvert converter{};
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = converter(lhs[i] != scalar);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()( T const &scalar, Array<T, N> const &rhs) const {
+
+    Array<T, N> result;
+
+    OutputConvert converter{};
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = converter(scalar != rhs[i]);
+    }
+
+    return result;
+  }
+};
 } // namespace cutlass

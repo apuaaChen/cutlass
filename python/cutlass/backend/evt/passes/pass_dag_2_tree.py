@@ -160,7 +160,67 @@ class PassDAG2Tree(EVTPassBase):
                     self.dag_ir.remove_node(node)
 
             else:
-                raise NotImplementedError("No LCA found. Consider SplitTreeVisitor.")
+                common_source = node
+                # TODO: probably split tree is a better option. Now we stick on 
+                # DAG visitor and include every nodes into it
+                node_to_fuse = set.union(*reachable_nodes)
+                # Get all the input nodes
+                all_input_nodes = []
+                all_output_nodes = []
+                for node in node_to_fuse:
+                    all_input_nodes.append(set(self.dag_ir.get_all_inputs(node)))
+                    all_output_nodes.append(set(self.dag_ir.get_users(node)))
+                all_input_nodes = set.union(*all_input_nodes)
+                all_output_nodes = set.union(*all_output_nodes)
+
+                new_subgraph_nodes = set.union(node_to_fuse, all_input_nodes, all_output_nodes)
+
+                # Create the subgraph
+                subgraph_ = self.dag_ir._graph.subgraph(new_subgraph_nodes)
+                subgraph = DAGIR()
+                for node in subgraph_.nodes:
+                    meta = deepcopy(self.dag_ir.get_node_meta(node))
+                    if node not in node_to_fuse:
+                        meta.disabled = True
+                    subgraph.add_node(meta)
+                for edge in subgraph_.edges:
+                    subgraph.add_edge(edge[0], edge[1], self.dag_ir.get_edge_weight(edge[0], edge[1]))
+
+                # As in this case, we do not have a specific LCA node in the graph
+                # To create the DAG node deterministically, we pick the nodes that
+                # is farest from the current node
+
+                # First find all nodes in the subgraph without users
+                max_distance = 0
+                output_node = None
+                for node in subgraph.nodes:
+                    if len(subgraph.get_users(node)) == 0:
+                        distance = subgraph.distance_between(common_source, node)
+                        if distance > max_distance:
+                            output_node = node
+                            max_distance = distance
+                
+                # Create the fused node
+                dag_node = TopoVisitorNode(
+                    name=f"dag_{output_node}", subgraph=subgraph,
+                    output_node=self.dag_ir.get_node_meta(output_node)
+                )
+                self.dag_ir.add_node(dag_node)
+                all_input_nodes_list = list(all_input_nodes)
+                all_input_nodes_list = sorted(all_input_nodes_list, key=lambda x: x)
+                # Add input edges
+                for idx, node in enumerate(all_input_nodes_list):
+                    self.dag_ir.add_edge(node, dag_node.name, weight=idx)
+
+                # Replace all uses with DAG node (only 1 output node)
+                self.dag_ir.replace_all_uses_with(output_node, dag_node.name)
+
+                # Remove all fused nodes
+                node_to_fuse.remove(output_node)
+                for node in node_to_fuse:
+                    self.dag_ir.remove_node(node)
+
+                #raise NotImplementedError("No LCA found. Consider SplitTreeVisitor.")
 
     def ensures(self) -> None:
         # Ensure that after the pass, the resulting DAG becomes a tree

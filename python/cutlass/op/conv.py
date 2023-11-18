@@ -128,6 +128,7 @@ from cutlass.backend.library import TensorDescription, TileDescription
 from cutlass.op.op import OperationBase
 from cutlass.shape import Conv2DProblemSize, MatrixCoord
 from cutlass.utils import check, datatypes
+from cutlass.backend.evt import EpilogueFunctorVisitor
 
 
 class Conv2d(OperationBase):
@@ -722,7 +723,7 @@ class Conv2d(OperationBase):
             stride=(1, 1), padding=(0, 0), dilation=(1, 1),
             alpha=None, beta=None,
             split_k=("serial", 1), sync: bool = True,
-            print_module: bool = False) -> Conv2dArguments:
+            print_module: bool = False, visitor_args: dict = None) -> Conv2dArguments:
         """
         Runs the kernel currently specified. If it has not already been, the kernel is emitted and
         compiled. Tensors holding operands and outputs of the kernel are sourced either from the
@@ -832,10 +833,14 @@ class Conv2d(OperationBase):
                 print(self.reduction_operation.rt_module.emit())
             compiler.add_module([self.reduction_operation,])
 
+        if isinstance(self.epilogue_functor, EpilogueFunctorVisitor):
+            output_op = self.operation.epilogue_type(visitor_args)
+        else:
+            output_op = self.operation.epilogue_type(*epilogue_args)
         arguments = Conv2dArguments(
             operation=self.operation, problem_size=problem_size,
             A=A, B=B, C=C, D=D,
-            output_op=self.operation.epilogue_type(*epilogue_args),
+            output_op=output_op,
             split_k_mode=datatypes.getattr_enum(SplitKMode, split_k[0]),
             split_k_slices=split_k[1]
         )

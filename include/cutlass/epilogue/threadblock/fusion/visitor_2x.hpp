@@ -37,6 +37,7 @@
 #pragma once
 
 #include "cutlass/epilogue/fusion/sm90_visitor_tma_warpspecialized.hpp"
+#include "cutlass/conv/conv2d_problem_size.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -150,6 +151,31 @@ struct VisitorImpl2x: fusion::detail::Sm90VisitorImplBase<Ops...> {
       }
     );
   }
+
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape,
+    conv::Conv2dProblemSize conv_problem_size,
+    int start_h_, int start_w_, int tiled_rows_per_filter
+  ) {
+    return transform_apply(ops,
+      [&] (auto& op) {
+        return op.get_callbacks(
+          threadblock_tile_offset,
+          thread_idx,
+          problem_shape,
+          conv_problem_size,
+          start_h_, start_w_, tiled_rows_per_filter);
+      },
+      [] (auto&&... callbacks) {
+        auto callbacks_tuple = cute::make_tuple(callbacks...);
+        return Callbacks<decltype(callbacks_tuple)>{callbacks_tuple};
+      }
+    );
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -219,6 +245,36 @@ struct TreeVisitor2x : VisitorImpl2x<ChildOps..., NodeOp> {
         threadblock_tile_offset,
         thread_idx,
         problem_shape
+      )
+    );
+  }
+
+  // Callbacks factory
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape,
+    conv::Conv2dProblemSize conv_problem_size,
+    int start_h_, int start_w_, int tiled_rows_per_filter
+  ) {
+    return Callbacks<
+    decltype(VisitorImpl2x<ChildOps..., NodeOp>::
+      get_callbacks(
+        threadblock_tile_offset,
+        thread_idx,
+        problem_shape,
+        conv_problem_size,
+        start_h_, start_w_, tiled_rows_per_filter
+      ))>(
+      VisitorImpl2x<ChildOps..., NodeOp>::
+      get_callbacks(
+        threadblock_tile_offset,
+        thread_idx,
+        problem_shape,
+        conv_problem_size,
+        start_h_, start_w_, tiled_rows_per_filter
       )
     );
   }
@@ -310,6 +366,35 @@ struct TopologicalVisitor2x : VisitorImpl2x<Ops...> {
       )
     );
   }
+
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape,
+    conv::Conv2dProblemSize conv_problem_size,
+    int start_h_, int start_w_, int tiled_rows_per_filter
+  ) {
+    return Callbacks<decltype(
+      VisitorImpl2x<Ops...>::
+      get_callbacks(
+        threadblock_tile_offset,
+        thread_idx,
+        problem_shape,
+        conv_problem_size,
+        start_h_, start_w_, tiled_rows_per_filter
+      ))>(
+      VisitorImpl2x<Ops...>::
+      get_callbacks(
+        threadblock_tile_offset,
+        thread_idx,
+        problem_shape,
+        conv_problem_size,
+        start_h_, start_w_, tiled_rows_per_filter
+      )
+    );
+  }
 };
 
 
@@ -343,6 +428,8 @@ struct OutputTileThreadLayout: DefaultThreadMapTensorOp<
   ThreadblockShape_::kK/WarpShape_::kK,
   Element_,
   ElementsPerAccess>::Type {
+
+  using ThreadblockShape = ThreadblockShape_;
   
   using Base = typename DefaultThreadMapTensorOp<
     ThreadblockShape_,

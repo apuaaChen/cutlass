@@ -241,3 +241,9 @@ class DAGIR:
         Return True is a path exists from src to target
         """
         return nx.has_path(self._graph, src, target)
+    
+    #
+    # Distance
+    #
+    def distance_between(self, src: str, target: str) -> int:
+        return nx.shortest_path_length(self._graph, source=src, target=target)

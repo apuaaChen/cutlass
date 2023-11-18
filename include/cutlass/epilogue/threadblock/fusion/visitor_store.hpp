@@ -143,6 +143,98 @@ struct VisitorAuxStore{
     }
 
   };
+  
+  template <class MTensor, class GTensor, class RTensor, class CTensor, class ProblemShape>
+  struct CallbacksStrideDgrad : EmptyCallbacks {
+    CUTLASS_DEVICE
+    CallbacksStrideDgrad(
+      MTensor&& mAux,
+      GTensor&& tC_gAux,
+      RTensor&& tC_rAux,
+      CTensor&& tC_cAux,
+      ProblemShape problem_shape,
+      Params const* params_ptr,
+      conv::Conv2dProblemSize conv_problem_size,
+      int start_h_, int start_w_, int tiled_rows_per_filter
+    ):
+      mAux(cute::forward<MTensor>(mAux)),
+      tC_gAux(cute::forward<GTensor>(tC_gAux)),
+      tC_rAux(cute::forward<RTensor>(tC_rAux)),
+      tC_cAux(cute::forward<CTensor>(tC_cAux)),
+      problem_shape(problem_shape),
+      conv_problem_size(conv_problem_size),
+      params_ptr(params_ptr),
+      start_h_(start_h_),
+      start_w_(start_w_),
+      tiled_rows_per_filter(tiled_rows_per_filter)
+    {
+      p_ = (conv_problem_size.H - start_h_ + conv_problem_size.stride_h - 1) / conv_problem_size.stride_h;
+      q_ = (conv_problem_size.W - start_w_ + conv_problem_size.stride_w - 1) / conv_problem_size.stride_w;
+    }
+
+    MTensor mAux;
+    GTensor tC_gAux;
+    RTensor tC_rAux;
+    CTensor tC_cAux;
+    Params const* params_ptr;
+    ProblemShape problem_shape;
+    conv::Conv2dProblemSize conv_problem_size;
+    int tiled_rows_per_filter;
+    int p_;
+    int q_;
+    int start_h_;
+    int start_w_;
+
+    CUTLASS_DEVICE void
+    begin_step(int step_idx) {
+      clear(tC_rAux);
+    }
+
+    template <class ElementAccumulator, class ElementInput, int FragmentSize>
+    CUTLASS_DEVICE auto // returns an Array
+    visit(int iter_idx, int row_idx, int column_idx, int frg_idx, 
+          Array<ElementAccumulator, FragmentSize> const& frg_acc,
+          Array<ElementInput, FragmentSize> const& frg_input) {
+      using ConvertInput = NumericArrayConverter<Element, ElementInput, FragmentSize, RoundStyle>;
+      ConvertInput convert_input{};
+
+      Tensor tC_rAux_frg = recast<Array<Element, FragmentSize>>(coalesce(tC_rAux));
+      tC_rAux_frg(frg_idx) = convert_input(frg_input);
+
+      return frg_input;
+    }
+
+    // Compute the mapped row idx of the output
+    template <class mCoord>
+    CUTLASS_DEVICE auto
+    mapped_coord(mCoord coord) {
+      auto [m_idx, n_idx, l_idx] = coord;
+      int npq_offset = m_idx % tiled_rows_per_filter;
+      int n = npq_offset / (p_ * q_);
+      int residual = npq_offset % (p_ * q_);
+      int p = residual / q_;
+      int q = residual % q_;
+
+      int mapped_m_idx = n * (conv_problem_size.H * conv_problem_size.W) +
+                        (start_h_ + p * conv_problem_size.stride_h) * conv_problem_size.W +
+                        (start_w_ + q * conv_problem_size.stride_w);
+      return mCoord(mapped_m_idx, n_idx, l_idx);
+    }
+
+    CUTLASS_DEVICE void
+    end_step(int step_idx) {
+      auto src_v = filter(tC_rAux);
+      auto coord_v = filter(tC_cAux(_,_,_,step_idx));
+      auto dst_v = filter(tC_gAux(_,_,_,step_idx));
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(src_v); ++i) {
+        auto m_coord = mapped_coord(coord_v(i));
+        bool guard = elem_less(m_coord, problem_shape);
+        cutlass::arch::global_store<VecType, sizeof(VecType)>(src_v(i), (void*)&mAux(m_coord), guard);
+      }
+    }
+
+  };
 
   template <class ProblemShape>
   CUTLASS_DEVICE auto
@@ -175,6 +267,46 @@ struct VisitorAuxStore{
       cute::move(tC_cAux),
       problem_shape,
       params_ptr
+    );
+  }
+
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape,
+    conv::Conv2dProblemSize conv_problem_size,
+    int start_h_, int start_w_, int tiled_rows_per_filter
+  ) {
+    Tensor mAux = make_tensor(
+      make_gmem_ptr(params_ptr->ptr_aux), 
+      problem_shape, 
+      params_ptr->dAux);   // (M,N,L)
+    // VECTOR, FRAGMENT_COLUMN, FRAGMENT_ROW, ITERATION_ROW, ITERATION_GROUP, ITERATION_CLUSTER
+    Tensor tC_gAux = recast<VecType>(group_modes<3,6>(ThreadMap::partition(mAux, thread_idx, threadblock_tile_offset)));
+    Tensor tC_rAux = make_tensor_like(take<0,3>(tC_gAux));
+
+    // Generate the pred tensor
+    Tensor cAux = make_identity_tensor(mAux.shape());
+    Tensor tC_cAux = local_partition(
+      group_modes<3,6>(ThreadMap::partition(cAux, thread_idx, threadblock_tile_offset)),
+      Shape<Int<VecLength>>{},
+      (_0{})
+    );
+
+    return CallbacksStrideDgrad<
+      decltype(mAux),
+      decltype(tC_gAux), decltype(tC_rAux), 
+      decltype(tC_cAux), ProblemShape>(
+      cute::move(mAux),
+      cute::move(tC_gAux),
+      cute::move(tC_rAux),
+      cute::move(tC_cAux),
+      problem_shape,
+      params_ptr,
+      conv_problem_size,
+      start_h_, start_w_, tiled_rows_per_filter
     );
   }
 };
@@ -760,6 +892,18 @@ struct VisitorRowReduction {
       problem_shape,
       params_ptr
     );
+  }
+
+  template <class ProblemShape>
+  CUTLASS_DEVICE auto
+  get_callbacks(
+    gemm::GemmCoord threadblock_tile_offset,
+    int thread_idx,
+    ProblemShape problem_shape,
+    conv::Conv2dProblemSize conv_problem_size,
+    int start_h_, int start_w_, int tiled_rows_per_filter
+  ) {
+    return get_callbacks<ProblemShape>(threadblock_tile_offset, thread_idx, problem_shape);
   }
 };
 

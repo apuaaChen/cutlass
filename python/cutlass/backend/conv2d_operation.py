@@ -116,8 +116,11 @@ class Conv2dArguments(ArgumentBase):
 
         if self.layout_C == LayoutType.TensorNC32HW32:
             raise Exception("Layout type TensorNC32HW32 is not currently supported")
-
-        super().__init__(A, B, C, D, **kwargs)
+        
+        if hasattr(self.operation.epilogue_functor, "visitor") and operation.arch != 90:
+            super().__init__(A, B, None, None, **kwargs)
+        else:
+            super().__init__(A, B, C, D, **kwargs)
 
         if "split_k_slices" in kwargs.keys() and kwargs["split_k_slices"] > 1:
             self.split_k_mode = split_k_mode
@@ -441,7 +444,7 @@ class Conv2dOperation:
         self.argument_type = self.rt_module.argument_type
         self.epilogue_type = self.rt_module.epilogue_type
 
-    def run(self, arguments: Conv2dArguments) -> cuda.CUresult:
+    def run(self, arguments: Conv2dArguments, stream=cuda.CUstream(0)) -> cuda.CUresult:
         """
         Launch the cuda kernel with input arguments
 
@@ -454,6 +457,7 @@ class Conv2dOperation:
             arguments.host_workspace,
             arguments.device_workspace,
             arguments.launch_config,
+            stream
         )
 
         if err != cuda.CUresult.CUDA_SUCCESS:
@@ -651,6 +655,48 @@ using DeviceKernel =
     typename cutlass::conv::device::ImplicitGemmConvolution<Conv2d${conv_kind_name}Kernel>;
 """
 
+        self.template_visitor = """
+using OutputTileThreadMap = cutlass::epilogue::threadblock::OutputTileThreadLayout<
+    cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
+    cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k}>,
+    ${element_c},
+    ${align_c},
+    ${epilogue_stages} /* epilogue stages */
+>;
+
+${callback_decl}
+
+// Conv2d${conv_kind_name} ${iterator_algorithm_name} kernel instance "${operation_name}"
+using ${operation_name}_base = typename cutlass::conv::kernel::DefaultConv2d${conv_kind_name}WithVisitor<
+  ${element_a},
+  ${layout_a},
+  ${element_b},
+  ${layout_b},
+  ${element_c},
+  ${layout_c},
+  ${element_accumulator},
+  ${element_epilogue},
+  ${opcode_class},
+  ${arch},
+  cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
+  cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k} >,
+  cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
+  ${callback_name},
+  ${swizzling_functor},
+  ${stages},
+  ${math_operator},
+  ${iterator_algorithm},
+  ${stride_support},
+  ${align_a},
+  ${align_b},
+  ${align_c},
+  ${epilogue_stages} /* epilogue stages */
+>::Kernel;
+
+struct ${operation_name}${operation_suffix}:
+  public ${operation_name}_base { };
+"""
+
     def emit(self, operation):
         warp_shape = [int(operation.tile_description.threadblock_shape[idx] /
                           operation.tile_description.warp_count[idx]) for idx in range(3)]
@@ -682,7 +728,6 @@ using DeviceKernel =
             "instruction_shape_n": str(operation.tile_description.math_instruction.instruction_shape[1]),
             "instruction_shape_k": str(operation.tile_description.math_instruction.instruction_shape[2]),
             "epilogue_vector_length": str(epilogue_vector_length),
-            "epilogue_functor": operation.epilogue_functor.emit(),
             "swizzling_functor": SwizzlingFunctorTag[operation.swizzling_functor],
             "stages": str(operation.tile_description.stages),
             "iterator_algorithm": IteratorAlgorithmTag[operation.iterator_algorithm],
@@ -698,4 +743,27 @@ using DeviceKernel =
         else:
             conv2d_template = self.template_device
 
-        return SubstituteTemplate(conv2d_template, values)
+        if hasattr(operation.epilogue_functor, "visitor"):
+            self.includes += [
+                "cutlass/epilogue/threadblock/fusion/visitors.hpp",
+                "cutlass/conv/kernel/default_conv2d_fprop_with_visitor.h",
+                "cutlass/conv/kernel/default_conv2d_dgrad_with_visitor.h"
+            ]
+            callback_name, callback_decl = operation.epilogue_functor.emit(operation)
+            values["callback_name"] = callback_name
+            values["callback_decl"] = callback_decl
+            values["align_c"] = str(operation.C.alignment)
+            values["element_epilogue"] = DataTypeTag[operation.epilogue_functor.element_epilogue]
+            # if operation.conv_kind == ConvKind.Dgrad and operation.stride_support == StrideSupport.Strided:
+            #     values["layout_stride"] = "StridedDgrad"
+            # else:
+            #     values["layout_stride"] = ""
+            if hasattr(operation.epilogue_functor, "epilogue_stages"):
+                epilogue_stages = operation.epilogue_functor.epilogue_stages
+            else:
+                epilogue_stages = 1
+            values["epilogue_stages"] = str(epilogue_stages)
+            return SubstituteTemplate(self.template_visitor, values)
+        else:
+            values["epilogue_functor"] = operation.epilogue_functor.emit()
+            return SubstituteTemplate(conv2d_template, values)

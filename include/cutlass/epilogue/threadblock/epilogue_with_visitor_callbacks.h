@@ -37,6 +37,7 @@
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "cutlass/epilogue/threadblock/epilogue_base.h"
+#include "cutlass/conv/conv2d_problem_size.h"
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -113,6 +114,8 @@ public:
 
   struct OutputOp{
     using ElementAccumulator = ElementAccumulator;
+    using ElementCompute = ElementAccumulator;
+    using ElementOutput = typename DefaultEpilogue::ElementOutput;
     using Params = typename FusionCallbacks::Arguments;
   };
 
@@ -260,6 +263,222 @@ public:
       threadblock_tile_offset,
       thread_idx,
       problem_shape
+    );
+
+    callbacks.begin_epilogue();
+
+    //
+    // Iterator over warp-level accumulator fragment
+    //
+
+    AccumulatorFragmentIterator accum_fragment_iterator(accumulators);
+
+    //
+    // Iterate over accumulator tile
+    //
+
+    if constexpr(Pipelined){
+      __syncthreads();
+
+      //
+      // Pipeline Prologue
+      //
+      size_t warp_iterator_offset = kSmemStageOffset;
+      size_t smem_iterator_offset = kSmemStageOffset;
+      callbacks.begin_step(0);
+    
+      acc2smem_source_needed<cutlass::make_index_sequence<kIterations>>::push(
+            0, accum_fragment_iterator, this->warp_tile_iterator_);
+      
+      this->warp_tile_iterator_.add_pointer_offset(warp_iterator_offset);
+      warp_iterator_offset = -warp_iterator_offset;
+
+      //
+      // Pipeline Loop
+      //
+
+      #pragma unroll(IterationsUnroll ? kIterations : 1)
+      for (int iter_idx = 1; iter_idx < kIterations + 1; ++iter_idx) {
+
+        __syncthreads();
+
+        // Skip the load for epilogue
+        if (iter_idx < kIterations) {
+          callbacks.begin_step(iter_idx);
+
+          acc2smem_source_needed<cutlass::make_index_sequence<kIterations>>::push(
+              iter_idx, accum_fragment_iterator, this->warp_tile_iterator_);
+
+          this->warp_tile_iterator_.add_pointer_offset(warp_iterator_offset);
+          warp_iterator_offset = -warp_iterator_offset;
+        }
+        
+        typename SharedLoadIterator::Fragment aligned_accum_fragment[kPartitionsK];
+
+        shared_load_iterator_.load(aligned_accum_fragment[0]);
+        // If the number of k-slices is > 1 - perform a reduction amongst the k-slices
+        if (kPartitionsK > 1) {
+
+          plus <typename SharedLoadIterator::Fragment> add_fragments;
+
+          CUTLASS_PRAGMA_UNROLL
+          for ( int i = 1; i < kPartitionsK; ++i) {
+            shared_load_iterator_.add_pointer_offset(kSmemPointerOffset);
+            shared_load_iterator_.load(aligned_accum_fragment[i]);
+            aligned_accum_fragment[0] = add_fragments(aligned_accum_fragment[0], aligned_accum_fragment[i]);
+          }
+
+          shared_load_iterator_.add_pointer_offset((1 - kPartitionsK) * kSmemPointerOffset);
+        }
+        shared_load_iterator_.add_pointer_offset(smem_iterator_offset);
+        smem_iterator_offset = -smem_iterator_offset;
+        
+        //
+        // Iterate over output fragments
+        //
+
+        AccumulatorAccessType const *accum_frag_ptr =
+          reinterpret_cast<AccumulatorAccessType const *>(&aligned_accum_fragment);
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int idx = 0; idx < kAccumulatorFragmentCount; ++idx) {
+
+          int row_idx = idx / SharedLoadIterator::ThreadMap::Iterations::kColumn;
+          int col_idx = idx % SharedLoadIterator::ThreadMap::Iterations::kColumn;
+
+          // Start a new row of the output fragment
+          if (!col_idx) {
+            callbacks.begin_row(row_idx);
+          }
+
+          callbacks.visit(
+            iter_idx-1,
+            row_idx,
+            col_idx,
+            idx,
+            accum_frag_ptr[idx]
+          );
+
+          // End the row of the output fragment
+          if (col_idx + 1 == SharedLoadIterator::ThreadMap::Iterations::kColumn) {
+            callbacks.end_row(row_idx);
+          }
+        }
+
+        //
+        // Conclude the step
+        //
+
+        callbacks.end_step(iter_idx-1);
+      }
+    } else {
+
+      #pragma unroll(IterationsUnroll ? kIterations : 1)
+      for (int iter_idx = 0; iter_idx < kIterations; ++iter_idx) {
+
+        //
+        // Load the source
+        //
+
+        callbacks.begin_step(iter_idx);
+
+        //
+        // Convert and store fragment
+        //
+
+        __syncthreads();
+
+        acc2smem_source_needed<cutlass::make_index_sequence<kIterations>>::push(
+            iter_idx, accum_fragment_iterator, this->warp_tile_iterator_);
+
+        __syncthreads();
+
+        //
+        // Load fragments from shared memory
+        //
+
+        typename SharedLoadIterator::Fragment aligned_accum_fragment[kPartitionsK];
+
+        shared_load_iterator_.load(aligned_accum_fragment[0]);
+        // If the number of k-slices is > 1 - perform a reduction amongst the k-slices
+        if (kPartitionsK > 1) {
+
+          plus <typename SharedLoadIterator::Fragment> add_fragments;
+
+          CUTLASS_PRAGMA_UNROLL
+          for ( int i = 1; i < kPartitionsK; ++i) {
+            shared_load_iterator_.add_pointer_offset(kSmemPointerOffset);
+            shared_load_iterator_.load(aligned_accum_fragment[i]);
+            aligned_accum_fragment[0] = add_fragments(aligned_accum_fragment[0], aligned_accum_fragment[i]);
+          }
+
+          shared_load_iterator_.add_pointer_offset((1 - kPartitionsK) * kSmemPointerOffset);
+        }
+
+        //
+        // Iterate over output fragments
+        //
+
+        AccumulatorAccessType const *accum_frag_ptr =
+          reinterpret_cast<AccumulatorAccessType const *>(&aligned_accum_fragment[0]);
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int idx = 0; idx < kAccumulatorFragmentCount; ++idx) {
+
+          int row_idx = idx / SharedLoadIterator::ThreadMap::Iterations::kColumn;
+          int col_idx = idx % SharedLoadIterator::ThreadMap::Iterations::kColumn;
+
+          // Start a new row of the output fragment
+          if (!col_idx) {
+            callbacks.begin_row(row_idx);
+          }
+
+          callbacks.visit(
+            iter_idx,
+            row_idx,
+            col_idx,
+            idx,
+            accum_frag_ptr[idx]
+          );
+
+          // End the row of the output fragment
+          if (col_idx + 1 == SharedLoadIterator::ThreadMap::Iterations::kColumn) {
+            callbacks.end_row(row_idx);
+          }
+        }
+
+        //
+        // Conclude the step
+        //
+
+        callbacks.end_step(iter_idx);
+      }
+    }
+
+    callbacks.end_epilogue();
+  }
+
+  /// Overloaded for Dgrad
+  /// Streams the result to global memory
+  template <class ProblemShape>
+  CUTLASS_DEVICE
+  void operator()(
+    AccumulatorTile const &accumulators,
+    cutlass::gemm::GemmCoord threadblock_tile_offset,
+    ProblemShape problem_shape,
+    int thread_idx,
+    conv::Conv2dProblemSize conv_problem_size,
+    int start_h_, int start_w_, int tiled_rows_per_filter
+    ) {         ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
+
+    auto callbacks = fusion_callbacks.get_callbacks(
+      threadblock_tile_offset,
+      thread_idx,
+      problem_shape,
+      conv_problem_size,
+      start_h_,
+      start_w_,
+      tiled_rows_per_filter
     );
 
     callbacks.begin_epilogue();

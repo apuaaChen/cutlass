@@ -91,6 +91,7 @@ if torch_available:
         torch.float32: DataType.f32,
         torch.double: DataType.f64,
         torch.float64: DataType.f64,
+        torch.int64: DataType.s64
     }
 
 
