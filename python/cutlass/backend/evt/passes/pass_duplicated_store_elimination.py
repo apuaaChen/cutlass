@@ -92,5 +92,5 @@ class PassDuplicatedStoreElimination(EVTPassBase):
                 for v in value[1:]:
                     inputs = self.dag_ir.get_all_inputs(v)
                     assert len(inputs) == 1
-                    input = inputs
+                    input = inputs[0]
                     self.dag_ir.replace_all_uses_with(v, input)

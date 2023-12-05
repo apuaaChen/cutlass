@@ -907,11 +907,11 @@ class Conv2dFprop(Conv2d):
     def run(
         self, input=None, weight=None, C=None, output=None, alpha=None, beta=None,
         stride=(1, 1), padding=(0, 0), dilation=(1, 1), split_k=("serial", 1),
-        sync: bool = True, print_module: bool = False) -> Conv2dArguments:
+        sync: bool = True, print_module: bool = False, visitor_args: dict = None) -> Conv2dArguments:
 
         A, B, D = input, weight, output
         return super().run(
-            A, B, C, D, alpha, beta, stride, padding, dilation, split_k, sync, print_module)
+            A, B, C, D, alpha, beta, stride, padding, dilation, split_k, sync, print_module, visitor_args=visitor_args)
 
 
 class Conv2dDgrad(Conv2d):
@@ -921,7 +921,7 @@ class Conv2dDgrad(Conv2d):
         element=None,
         element_grad_output=None, element_weight=None, element_C=None, element_grad_input=None,
         element_accumulator=None,
-        cc: int = None, kernel_cc: int = None):
+        cc: int = None, kernel_cc: int = None, visitor_args: dict = None):
         A, B, D = grad_output, weight, grad_input
         element_A, element_B, element_D = element_grad_output, element_weight, element_grad_input
         super().__init__(
@@ -931,11 +931,11 @@ class Conv2dDgrad(Conv2d):
 
     def run(self, grad_output=None, weight=None, C=None, grad_input=None, alpha=None, beta=None,
         stride=(1, 1), padding=(0, 0), dilation=(1, 1), split_k=("serial", 1),
-        sync: bool = True, print_module: bool = False) -> Conv2dArguments:
+        sync: bool = True, print_module: bool = False, visitor_args: dict = None) -> Conv2dArguments:
         #
         A, B, D = grad_output, weight, grad_input
         return super().run(
-            A, B, C, D, alpha, beta, stride, padding, dilation, split_k, sync, print_module)
+            A, B, C, D, alpha, beta, stride, padding, dilation, split_k, sync, print_module, visitor_args=visitor_args)
 
 
 class Conv2dWgrad(Conv2d):
